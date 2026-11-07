@@ -6,19 +6,26 @@
 //   PCGS_TOKEN         bearer token from your PCGS account's Public API page
 //   GREYSHEET_TOKEN    optional, CDN API x-api-token
 //   GREYSHEET_KEY      optional, CDN API x-api-key
-// Vars (wrangler.toml):
-//   ALLOWED_ORIGIN     the URL your app is served from, e.g. https://you.github.io
 
 const PCGS = "https://api.pcgs.com/publicapi";
 const CDN = "https://cpgpublicapiv2.greysheet.com/api";
 
 export default {
   async fetch(req, env) {
-    const cors = corsHeaders(req, env);
+    const cors = corsHeaders(req);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
     const url = new URL(req.url);
-    if (!env.APP_KEY || req.headers.get("X-App-Key") !== env.APP_KEY) {
+    if (url.pathname === "/" || url.pathname === "") {
+      // Open the Worker URL in a browser to confirm it's running and configured.
+      return json({
+        ok: true, app: "Slab Scan lookup server",
+        appKeySet: Boolean(env.APP_KEY), pcgsTokenSet: Boolean(env.PCGS_TOKEN),
+      }, 200, cors);
+    }
+    const sent = (req.headers.get("X-App-Key") || "").trim();
+    if (!env.APP_KEY) return json({ ok: false, error: "APP_KEY is not set on the server. Add it under Settings > Variables and Secrets." }, 401, cors);
+    if (sent !== String(env.APP_KEY).trim()) {
       return json({ ok: false, error: "Wrong or missing app passcode." }, 401, cors);
     }
 
@@ -74,7 +81,8 @@ async function lookup(params, env) {
     return { ok: false, error: "Send cert or barcode." };
   }
 
-  const r = await fetch(PCGS + path, { headers: { Authorization: `bearer ${env.PCGS_TOKEN}` } });
+  const token = String(env.PCGS_TOKEN).trim().replace(/^bearer\s+/i, "");
+  const r = await fetch(PCGS + path, { headers: { Authorization: `bearer ${token}` } });
   if (r.status === 204) return { ok: false, error: "PCGS has no data for that code." };
   if (r.status === 500) return { ok: false, error: "PCGS rejected the request (usually an expired or invalid token)." };
   if (!r.ok) return { ok: false, error: `PCGS returned HTTP ${r.status}.` };
@@ -117,12 +125,12 @@ function normalize(d, service) {
   };
 }
 
-function corsHeaders(req, env) {
-  const origin = req.headers.get("Origin") || "";
-  const allowed = (env.ALLOWED_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);
-  const ok = allowed.length === 0 || allowed.includes(origin);
+// The APP_KEY passcode is what protects the server, so any origin may call it.
+// (ALLOWED_ORIGIN is no longer required; a typo there used to block the app.)
+function corsHeaders(req) {
+  const origin = req.headers.get("Origin");
   return {
-    "Access-Control-Allow-Origin": ok ? origin || "*" : "null",
+    "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Headers": "X-App-Key, Content-Type",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Vary": "Origin",

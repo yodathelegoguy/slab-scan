@@ -37,17 +37,18 @@ The free tier allows 1,000 lookups a day.
 
 ### 2c. Add your settings and secrets
 1. On the Worker's page, click **Settings** → **Variables and Secrets** → **Add**.
-2. Add these one at a time, then click **Deploy**:
+2. Add these two secrets one at a time, then click **Deploy**:
 
 | Type | Variable name | Value |
 |---|---|---|
-| Text | `ALLOWED_ORIGIN` | `https://yodathelegoguy.github.io` |
 | Secret | `PCGS_TOKEN` | the PCGS token from Part 1 |
 | Secret | `APP_KEY` | a passcode you make up, e.g. `morgan-dollar-1881` |
 
-Type the names exactly as shown (capital letters and underscores matter). `ALLOWED_ORIGIN` has **no** slash or `/slab-scan` at the end.
+Type the names exactly as shown (capital letters and underscores matter).
 
 **Remember the APP_KEY passcode**; you'll type it into the app once.
+
+**Check it:** open your Worker URL in a browser. You should see `"app":"Slab Scan lookup server"` with `appKeySet` and `pcgsTokenSet` both `true`. If you see "Hello World!" instead, the code wasn't pasted or deployed (repeat 2b).
 
 *(Only if you later buy CDN's API add-on: also add secrets `GREYSHEET_TOKEN` and `GREYSHEET_KEY`.)*
 
@@ -81,7 +82,7 @@ Your collection is saved on the phone. Export now and then as a backup, because 
 
 | What you see | Fix |
 |---|---|
-| "Could not reach the lookup server" | Check the Worker URL in Settings (must start with `https://`, no extra spaces). |
+| "Could not reach…" | Open the Worker URL in Safari. "Hello World!" means the Slab Scan code isn't deployed yet (repeat 2b). An error page means the URL is wrong. |
 | "Wrong or missing app passcode" | The app passcode must exactly match `APP_KEY` in Cloudflare. |
 | "PCGS_TOKEN is not set" | Add the `PCGS_TOKEN` secret in Cloudflare and click Deploy. |
 | "PCGS rejected the request" | The PCGS token is wrong or expired. Generate a new one and replace the secret. |

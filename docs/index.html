@@ -70,9 +70,9 @@
         <h2>Lookup server</h2>
         <p class="muted">PCGS and Greysheet keys live on your own small lookup server (see README), never in this app. Leave blank to use scan + manual entry only.</p>
         <label for="proxy-url">Lookup server URL</label>
-        <input id="proxy-url" type="url" placeholder="https://slab-scan.yourname.workers.dev">
+        <input id="proxy-url" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://slab-scan.yourname.workers.dev">
         <label for="app-key">App passcode</label>
-        <input id="app-key" type="password" placeholder="The APP_KEY you set on the server">
+        <input id="app-key" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="The APP_KEY you set on the server">
         <div class="row">
           <button type="submit" class="primary">Save</button>
           <button type="button" id="test-proxy">Test connection</button>

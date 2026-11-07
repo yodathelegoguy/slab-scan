@@ -1,7 +1,3 @@
 name = "slab-scan"
 main = "worker.js"
 compatibility_date = "2026-10-01"
-
-[vars]
-# Comma-separated list of origins allowed to call this server.
-ALLOWED_ORIGIN = "https://yodathelegoguy.github.io"

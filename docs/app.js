@@ -96,7 +96,7 @@
     const q = new URLSearchParams({ service: parsed.service || "PCGS" });
     if (parsed.kind === "cert") q.set("cert", parsed.cert); else q.set("barcode", parsed.raw);
     try {
-      const r = await fetch(cfg.proxy.replace(/\/$/, "") + "/lookup?" + q, { headers: { "X-App-Key": cfg.appKey } });
+      const r = await fetch(cfg.proxy + "/lookup?" + q, { headers: { "X-App-Key": cfg.appKey } });
       const d = await r.json().catch(() => ({ ok: false, error: `Server returned HTTP ${r.status}` }));
       return d;
     } catch (e) {
@@ -281,23 +281,42 @@
   // ---------- settings ----------
   $("#proxy-url").value = cfg.proxy || "";
   $("#app-key").value = cfg.appKey || "";
+  // Accepts "slab-scan.x.workers.dev", trailing slashes, or a pasted /health URL.
+  function cleanUrl(v) {
+    let u = String(v || "").trim().replace(/\s+/g, "");
+    if (!u) return "";
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+    return u.replace(/\/(health|lookup)?\/*$/i, "").replace(/\/+$/, "");
+  }
+  function readSettings() {
+    cfg.proxy = cleanUrl($("#proxy-url").value); cfg.appKey = $("#app-key").value.trim();
+    $("#proxy-url").value = cfg.proxy; save(CFG, cfg);
+  }
   $("#settings-form").addEventListener("submit", e => {
-    e.preventDefault();
-    cfg.proxy = $("#proxy-url").value.trim(); cfg.appKey = $("#app-key").value; save(CFG, cfg);
+    e.preventDefault(); readSettings();
     $("#settings-status").textContent = "Saved.";
   });
   $("#test-proxy").addEventListener("click", async () => {
-    const url = $("#proxy-url").value.trim().replace(/\/$/, "");
+    readSettings();
+    const url = cfg.proxy;
     const st = $("#settings-status");
     if (!url) { st.textContent = "Enter a server URL first."; return; }
-    st.textContent = "Testing…";
+    st.textContent = "Testing " + url + " …";
+    let r;
     try {
-      const r = await fetch(url + "/health", { headers: { "X-App-Key": $("#app-key").value } });
-      const d = await r.json();
-      st.textContent = d.ok
-        ? `Connected. PCGS key: ${d.pcgs ? "set" : "missing"}. Greysheet key: ${d.greysheet ? "set" : "not set"}.`
-        : d.error || `HTTP ${r.status}`;
-    } catch { st.textContent = "Could not reach that server."; }
+      r = await fetch(url + "/health", { headers: { "X-App-Key": cfg.appKey } });
+    } catch (e) {
+      st.textContent = `Could not reach ${url}. Check the URL is your Worker's address (ends in .workers.dev) and that you clicked Deploy after pasting the code. (${e.message})`;
+      return;
+    }
+    const text = await r.text();
+    let d; try { d = JSON.parse(text); } catch {
+      st.textContent = `Reached the server, but it isn't running the Slab Scan code yet (HTTP ${r.status}: "${text.slice(0, 60)}"). Paste worker.js into the Worker and Deploy.`;
+      return;
+    }
+    st.textContent = d.ok
+      ? `Connected and saved. PCGS key: ${d.pcgs ? "set" : "MISSING"}. Greysheet key: ${d.greysheet ? "set" : "not set"}.`
+      : (d.error || `HTTP ${r.status}`) + " (saved)";
   });
 
   updateCount();

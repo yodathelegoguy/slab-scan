@@ -39,7 +39,6 @@ npx wrangler secret put GREYSHEET_TOKEN
 npx wrangler secret put GREYSHEET_KEY
 npx wrangler deploy
 ```
-Edit `ALLOWED_ORIGIN` in `wrangler.toml` to the URL you host the app at.
 
 ### 3. Host the app
 Serve the `docs/` folder over HTTPS (camera access requires it). With GitHub Pages: Settings → Pages → Deploy from a branch → `main`, folder `/docs`. The app is then at https://yodathelegoguy.github.io/slab-scan/
