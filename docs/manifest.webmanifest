@@ -1,0 +1,15 @@
+{
+  "name": "Slab Scan",
+  "short_name": "Slab Scan",
+  "description": "Scan PCGS and NGC coin slabs, look them up, and export a spreadsheet.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14181f",
+  "theme_color": "#14181f",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

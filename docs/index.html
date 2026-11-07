@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14181f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Slab Scan">
+  <title>Slab Scan</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Slab Scan</h1>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="scan" role="tab">Scan</button>
+      <button class="tab" data-view="list" role="tab">Collection <span id="count" class="badge">0</span></button>
+      <button class="tab" data-view="settings" role="tab">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- SCAN -->
+    <section id="view-scan" class="view active">
+      <div class="service-pick" role="radiogroup" aria-label="Grading service">
+        <button class="seg active" data-service="auto">Auto</button>
+        <button class="seg" data-service="PCGS">PCGS</button>
+        <button class="seg" data-service="NGC">NGC</button>
+      </div>
+
+      <div id="reader-wrap">
+        <div id="reader"></div>
+        <div id="reader-idle">
+          <p>Point the camera at the barcode or QR code on the slab label.</p>
+          <button id="start-scan" class="primary big">Start camera</button>
+        </div>
+      </div>
+      <button id="stop-scan" class="ghost hidden">Stop camera</button>
+
+      <form id="manual" class="manual" autocomplete="off">
+        <label for="manual-input">Or type a cert number</label>
+        <div class="row">
+          <input id="manual-input" inputmode="text" placeholder="e.g. 12345678 or 1234567-001">
+          <button type="submit" class="primary">Look up</button>
+        </div>
+      </form>
+
+      <div id="result" class="card hidden"></div>
+    </section>
+
+    <!-- COLLECTION -->
+    <section id="view-list" class="view">
+      <div class="totals" id="totals"></div>
+      <div class="row wrap">
+        <button id="export-xlsx" class="primary">Export Excel</button>
+        <button id="export-csv">Export CSV</button>
+        <button id="clear-all" class="danger">Clear all</button>
+      </div>
+      <ul id="coin-list" class="coin-list"></ul>
+      <p id="empty" class="muted">No coins yet. Scan a slab to add one.</p>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+      <form id="settings-form" class="card">
+        <h2>Lookup server</h2>
+        <p class="muted">PCGS and Greysheet keys live on your own small lookup server (see README), never in this app. Leave blank to use scan + manual entry only.</p>
+        <label for="proxy-url">Lookup server URL</label>
+        <input id="proxy-url" type="url" placeholder="https://slab-scan.yourname.workers.dev">
+        <label for="app-key">App passcode</label>
+        <input id="app-key" type="password" placeholder="The APP_KEY you set on the server">
+        <div class="row">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="test-proxy">Test connection</button>
+        </div>
+        <p id="settings-status" class="muted"></p>
+      </form>
+      <div class="card">
+        <h2>Scanning tips</h2>
+        <ul class="muted tips">
+          <li>Hold the slab 4–6 inches away and tilt it to kill glare.</li>
+          <li>PCGS: scan the barcode or QR on the front label.</li>
+          <li>NGC: scan the barcode on the back of the label or the QR code.</li>
+          <li>No signal? Type the cert number instead and the coin is still saved.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="vendor/html5-qrcode.min.js"></script>
+  <script src="vendor/xlsx.mini.min.js"></script>
+  <script src="parse.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
