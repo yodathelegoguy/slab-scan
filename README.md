@@ -22,6 +22,8 @@ worker/   a tiny lookup server (Cloudflare Worker) that keeps your API keys off 
 
 ## Setup (about 15 minutes)
 
+**Start with [SETUP.md](SETUP.md)**: a click-by-click guide with no command line. The steps below are the command-line version for developers.
+
 ### 1. PCGS API token
 1. Sign in at pcgs.com and open https://www.pcgs.com/publicapi
 2. Generate your API access token and copy it.
