@@ -30,7 +30,7 @@ worker/   a tiny lookup server (Cloudflare Worker) that keeps your API keys off 
 
 ### 2. Lookup server (Cloudflare Worker, free tier)
 ```bash
-cd worker
+# from the repo root (wrangler.jsonc deploys the app + API as one Worker)
 npx wrangler login
 npx wrangler secret put APP_KEY      # make up a passcode
 npx wrangler secret put PCGS_TOKEN   # paste the PCGS token

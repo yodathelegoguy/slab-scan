@@ -10,6 +10,8 @@
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast("Could not save: storage is full or blocked."); } };
   let coins = load(STORE, []);
   let cfg = load(CFG, { proxy: "", appKey: "", service: "auto" });
+  // Served by the Cloudflare Worker itself? Then the lookup server is this same site.
+  if (!cfg.proxy && /\.workers\.dev$/i.test(location.hostname)) cfg.proxy = location.origin;
 
   // ---------- helpers ----------
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

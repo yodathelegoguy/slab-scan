@@ -16,7 +16,11 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
     const url = new URL(req.url);
-    if (url.pathname === "/" || url.pathname === "") {
+    const isApi = url.pathname === "/health" || url.pathname === "/lookup" || url.pathname === "/status"
+      || url.pathname.startsWith("/greysheet/");
+    // When deployed from the repo, the same Worker also serves the phone app (docs/).
+    if (!isApi && env.ASSETS) return env.ASSETS.fetch(req);
+    if (url.pathname === "/" || url.pathname === "" || url.pathname === "/status") {
       // Open the Worker URL in a browser to confirm it's running and configured.
       return json({
         ok: true, app: "Slab Scan lookup server",

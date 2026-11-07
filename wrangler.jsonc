@@ -1,0 +1,14 @@
+// One Cloudflare Worker serves both the phone app (docs/) and the lookup API.
+// Secrets (set in the Cloudflare dashboard, kept across deploys): APP_KEY, PCGS_TOKEN,
+// optional GREYSHEET_TOKEN and GREYSHEET_KEY.
+{
+  "name": "slab-scan",
+  "main": "worker/worker.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./docs",
+    "binding": "ASSETS",
+    "run_worker_first": ["/health", "/lookup", "/status", "/greysheet/*"]
+  },
+  "keep_vars": true
+}
