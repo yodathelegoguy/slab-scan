@@ -14,6 +14,8 @@
 //     login, so a leaked passcode alone is useless.
 // Bindings (wrangler.jsonc): API_LIMIT and AUTH_FAIL_LIMIT rate limiters;
 // DB (D1, optional) for lockouts and a PCGS lookup cache that survives.
+// Binding (optional, turns on the shared collection):
+//   DB                 a Cloudflare D1 database. The table is created on first use.
 
 const PCGS = "https://api.pcgs.com/publicapi";
 const CDN = "https://cpgpublicapiv2.greysheet.com/api";
@@ -28,7 +30,7 @@ export default {
 
     const url = new URL(req.url);
     const isApi = url.pathname === "/health" || url.pathname === "/lookup" || url.pathname === "/status"
-      || url.pathname === "/spot" || url.pathname.startsWith("/greysheet/");
+      || url.pathname === "/spot" || url.pathname === "/sync" || url.pathname.startsWith("/greysheet/");
     // When deployed from the repo, the same Worker also serves the phone app (docs/).
     if (!isApi && env.ASSETS) return env.ASSETS.fetch(req);
     if (url.pathname === "/" || url.pathname === "" || url.pathname === "/status") {
@@ -37,7 +39,7 @@ export default {
         ok: true, app: "Slab Scan lookup server",
         appKeySet: Boolean(env.APP_KEY), pcgsTokenSet: Boolean(env.PCGS_TOKEN),
         accessCheck: Boolean(env.ACCESS_AUD && env.ACCESS_TEAM_DOMAIN),
-        rateLimit: Boolean(env.API_LIMIT), databaseSet: Boolean(env.DB),
+        rateLimit: Boolean(env.API_LIMIT), databaseSet: Boolean(env.DB), syncDatabaseSet: Boolean(env.DB),
       }, 200, cors);
     }
     // Spot prices are public market data, so they don't need the app passcode.
@@ -54,7 +56,15 @@ export default {
           ok: true,
           pcgs: Boolean(env.PCGS_TOKEN),
           greysheet: Boolean(env.GREYSHEET_TOKEN && env.GREYSHEET_KEY),
+          sync: Boolean(env.DB),
         }, 200, cors);
+      }
+      if (url.pathname === "/sync") {
+        if (req.method !== "POST") return json({ ok: false, error: "Use POST." }, 405, cors);
+        if (!env.DB) return json({ ok: false, noDatabase: true, error: "Sync isn't set up on the server yet. Add a D1 database binding named DB (see SETUP.md)." }, 501, cors);
+        let body;
+        try { body = await req.json(); } catch { return json({ ok: false, error: "Bad sync request." }, 400, cors); }
+        return json(await sync(env.DB, body || {}), 200, cors);
       }
       if (url.pathname === "/lookup") return json(await lookup(url.searchParams, env), 200, cors);
 
@@ -231,6 +241,76 @@ function normalize(d, service) {
   };
 }
 
+// ---------- shared collection (D1) ----------
+// Every synced thing is a generic record: (kind, id) -> JSON data. The app decides what
+// the kinds are ("coin", "gslink", "deal", ...), so new fields and new kinds need no
+// server change. Each write gets the next sequence number, and a device asks for
+// everything after the last number it saw. The newest edit (by updatedAt) wins.
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS sync_records (
+    kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT, deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL, updated_by TEXT, seq INTEGER NOT NULL,
+    PRIMARY KEY (kind, id))`,
+  `CREATE INDEX IF NOT EXISTS sync_records_seq ON sync_records (seq)`,
+];
+let schemaReady = false;
+const PAGE = 500, MAX_PUSH = 500, MAX_DATA = 256 * 1024;
+
+async function sync(db, body) {
+  if (!schemaReady) { await db.batch(SCHEMA.map(q => db.prepare(q))); schemaReady = true; }
+  const by = String(body.by || "").trim().slice(0, 60) || null;
+  const now = Date.now();
+  const changes = Array.isArray(body.changes) ? body.changes.slice(0, MAX_PUSH) : [];
+  const rejected = [];
+  const valid = [];
+  for (const c of changes) {
+    const kind = String(c && c.kind || "").slice(0, 40), id = String(c && c.id || "").slice(0, 200);
+    if (!kind || !id) continue;
+    const data = c.deleted ? null : JSON.stringify(c.data ?? null);
+    if (data && data.length > MAX_DATA) { rejected.push({ kind, id, error: "too large" }); continue; }
+    // A phone with a wrong clock can't push a date far in the future and lock a record.
+    const at = Math.min(Number(c.updatedAt) || now, now + 60000);
+    valid.push({ kind, id, data, deleted: c.deleted ? 1 : 0, at });
+  }
+  const upsert = db.prepare(`INSERT INTO sync_records (kind, id, data, deleted, updated_at, updated_by, seq)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT COALESCE(MAX(seq), 0) + 1 FROM sync_records))
+    ON CONFLICT (kind, id) DO UPDATE SET data = excluded.data, deleted = excluded.deleted,
+      updated_at = excluded.updated_at, updated_by = excluded.updated_by, seq = excluded.seq
+    WHERE excluded.updated_at > sync_records.updated_at
+    RETURNING seq`);
+  const conflicts = [];
+  if (valid.length) {
+    const res = await db.batch(valid.map(v => upsert.bind(v.kind, v.id, v.data, v.deleted, v.at, by)));
+    res.forEach((r, i) => { if (!r.results || !r.results.length) conflicts.push(valid[i]); });
+  }
+
+  const max = (await db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM sync_records").first()).m;
+  let since = Math.max(0, Number(body.since) || 0);
+  // The database was replaced, so this device's place in it is meaningless: start over.
+  const reset = since > max;
+  if (reset) since = 0;
+  const { results } = await db.prepare(
+    "SELECT kind, id, data, deleted, updated_at, updated_by, seq FROM sync_records WHERE seq > ?1 ORDER BY seq LIMIT ?2"
+  ).bind(since, PAGE).all();
+  const rows = results.map(rowOut);
+  // A pushed edit that lost to a newer one: send the winner back even if it's older than `since`.
+  const seen = new Set(rows.map(r => r.kind + "\n" + r.id));
+  const lost = conflicts.filter(c => !seen.has(c.kind + "\n" + c.id));
+  if (lost.length) {
+    const winners = await db.batch(lost.map(c =>
+      db.prepare("SELECT kind, id, data, deleted, updated_at, updated_by, seq FROM sync_records WHERE kind = ?1 AND id = ?2").bind(c.kind, c.id)));
+    winners.forEach(w => (w.results || []).forEach(r => rows.push(rowOut(r))));
+  }
+  const cursor = results.length ? results[results.length - 1].seq : since;
+  return { ok: true, cursor, more: results.length === PAGE, reset, accepted: valid.length - conflicts.length, rejected, changes: rows, serverTime: now };
+}
+
+function rowOut(r) {
+  let data = null;
+  if (!r.deleted && r.data != null) { try { data = JSON.parse(r.data); } catch {} }
+  return { kind: r.kind, id: r.id, data, deleted: Boolean(r.deleted), updatedAt: r.updated_at, by: r.updated_by || "", seq: r.seq };
+}
+
 // The APP_KEY passcode is what protects the server, so any origin may call it.
 // (ALLOWED_ORIGIN is no longer required; a typo there used to block the app.)
 function corsHeaders(req) {
@@ -238,7 +318,7 @@ function corsHeaders(req) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Headers": "X-App-Key, Content-Type",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Vary": "Origin",
   };
 }

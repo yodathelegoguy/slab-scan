@@ -69,6 +69,47 @@ To lock the link down further (email sign-in with Cloudflare Access), see [SECUR
 
 ---
 
+## Part 4: Share one collection across phones (optional, 5 min)
+
+Every phone that uses the same Worker URL and passcode can share one collection, so coins scanned by anyone show up on everyone's phone (within about 30 seconds). The collection is stored in a free Cloudflare **D1** database attached to your Worker.
+
+### 4a. Check whether the database is already there
+Open **https://slab-scan.carsonrwells.workers.dev/status** in a browser.
+
+- `"syncDatabaseSet":true` means Cloudflare already created and attached the database when it deployed the latest code. Skip to 4c.
+- `"syncDatabaseSet":false` means you need to attach it by hand. Do 4b.
+
+### 4b. Create the database and attach it (only if 4a said false)
+1. In the Cloudflare dashboard, open the left menu and click **Storage & Databases** → **D1 SQL Database**.
+2. Click **Create Database** (or **Create**).
+3. Name it exactly **`slab-scan-db`**. Leave the location on automatic. Click **Create**.
+4. In the left menu, go to **Compute (Workers)** → **Workers & Pages** → click **slab-scan**.
+5. Click **Settings** → **Bindings** → **Add** (on some accounts it's **Add binding**).
+6. Choose **D1 database**.
+7. **Variable name**: type **`DB`** (capital letters). **D1 database**: pick **slab-scan-db**.
+8. Click **Add Binding** (or **Save** / **Deploy**).
+9. Open the `/status` link from 4a again. It should now say `"syncDatabaseSet":true`.
+
+You don't need to create any tables; the app sets them up the first time a phone syncs. Use the name `slab-scan-db` so future deploys from GitHub keep using the same database.
+
+### 4c. Turn it on in the app (each phone)
+1. Make sure the phone has the **Lookup server URL** and **App passcode** filled in (Part 3).
+2. In the app, tap **Settings** → **Shared collection**.
+3. Type **Your name** (shown next to coins you add and in the export's "Added By" column).
+4. Make sure **Share this phone's collection** is checked, and tap **Sync now**.
+5. The status line should say *"Shared collection: N coins. Last synced …"*. A small green dot on the Settings tab means sharing is working; amber means the last sync failed (the status line says why).
+
+The first sync adds whatever is already on that phone to the shared collection, so nothing is lost. Scans made with no signal are saved on the phone and go up automatically when it's back online.
+
+**Good to know**
+- Anyone with the passcode can see and change the shared collection. Names are labels, not separate logins.
+- **Clear all** and deleting a coin remove it from every phone. Export a copy first if you're unsure.
+- If two people edit the same coin at nearly the same time, the later edit wins.
+- Uncheck **Share this phone's collection** to keep a phone separate.
+- Cloudflare's free D1 tier is far more than a buying office needs.
+
+---
+
 ## Using it
 
 - **Auto / PCGS / NGC** at the top tells the app which company's slab you're scanning. Auto works for most; switch to NGC if an NGC barcode doesn't find anything.
@@ -76,7 +117,7 @@ To lock the link down further (email sign-in with Cloudflare Access), see [SECUR
 - **Collection** tab: see totals, tap **$** on a coin to change its Greysheet bid, **✕** to delete.
 - **Export Excel** opens the iPhone share sheet, so you can save to Files, AirDrop, or email it.
 
-Your collection is saved on the phone. Export now and then as a backup, because clearing Safari's website data erases it.
+Your collection is saved on the phone, and also on your Worker's database if you turned on sharing (Part 4). Without sharing, export now and then as a backup, because clearing Safari's website data erases it.
 
 ---
 
@@ -88,5 +129,6 @@ Your collection is saved on the phone. Export now and then as a backup, because 
 | "Wrong or missing app passcode" | The app passcode must exactly match `APP_KEY` in Cloudflare. |
 | "PCGS_TOKEN is not set" | Add the `PCGS_TOKEN` secret in Cloudflare and click Deploy. |
 | "PCGS rejected the request" | The PCGS token is wrong or expired. Generate a new one and replace the secret. |
+| Settings says "The server isn't set up for sharing yet" | The Worker has no D1 database attached. Do Part 4b. |
 | Camera won't start | iPhone Settings → Safari → Camera → Allow. |
 | Barcode won't read | Tilt the slab to remove glare, move 4–6 inches away, or type the cert number. |

@@ -9,7 +9,7 @@
   "assets": {
     "directory": "./docs",
     "binding": "ASSETS",
-    "run_worker_first": ["/health", "/lookup", "/status", "/spot", "/greysheet/*"]
+    "run_worker_first": ["/health", "/lookup", "/status", "/spot", "/sync", "/greysheet/*"]
   },
   "keep_vars": true,
   // Per-IP limits, enforced by Cloudflare (free, nothing to set up).

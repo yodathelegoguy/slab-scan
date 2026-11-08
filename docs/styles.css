@@ -241,3 +241,7 @@ button.back { background: transparent; border: 0; padding: 6px 0; min-height: 36
   body > *:not(#print-sheet) { display: none !important; }
   #print-sheet { display: block !important; }
 }
+
+/* Shared-collection sync indicator on the Settings tab */
+.sync-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #5fbf7a; vertical-align: 2px; margin-left: 2px; }
+.sync-dot.err { background: #e0a43a; }

@@ -27,10 +27,28 @@
 
   const DEFAULT_TERMS = "This offer is good for today only and is based on the coins listed above. " +
     "By signing, the seller confirms they own these coins and have the right to sell them.";
-  let oc = Object.assign({ pct: 85, rules: [], guidePct: null, round: 1, business: "", businessLine: "", terms: DEFAULT_TERMS, showBid: false }, load(OFFERS, {}));
-  let store = Object.assign({ deals: [], activeId: "" }, load(DEALS, {}));
-  const saveOc = () => save(OFFERS, oc);
-  const saveDeals = () => save(DEALS, store);
+  // Deals are kept as a plain array under DEAL_LIST so sync.js can share them between
+  // phones; the deal this phone is scanning into (activeId) stays on this phone only.
+  const DEAL_LIST = "slabscan.deallist.v1", DEAL_ACTIVE = "slabscan.dealactive.v1";
+  const loadOc = () => Object.assign({ pct: 85, rules: [], guidePct: null, round: 1, business: "", businessLine: "", terms: DEFAULT_TERMS, showBid: false }, load(OFFERS, {}));
+  function loadStore() {
+    const old = load(DEALS, null); // before sync: { deals, activeId } in one key
+    if (old && localStorage.getItem(DEAL_LIST) === null) {
+      save(DEAL_LIST, Array.isArray(old.deals) ? old.deals : []); save(DEAL_ACTIVE, old.activeId || "");
+    }
+    const deals = load(DEAL_LIST, []);
+    return { deals: Array.isArray(deals) ? deals : [], activeId: load(DEAL_ACTIVE, "") || "" };
+  }
+  let oc = loadOc();
+  let store = loadStore();
+  const synced = () => { window.SlabSync && SlabSync.changed(); };
+  const saveOc = () => { save(OFFERS, oc); synced(); };
+  const saveDeals = () => { save(DEAL_LIST, store.deals); save(DEAL_ACTIVE, store.activeId); synced(); };
+  // Another phone changed deals or offer settings.
+  window.addEventListener("slabsync:changed", () => {
+    oc = loadOc(); store = loadStore();
+    if (api) { renderBar(); if (document.getElementById("view-deals")?.classList.contains("active")) render(); }
+  });
 
   // ---------- offer math ----------
   const haystack = c => [c.name, c.series, c.denomination, c.metal].filter(Boolean).join(" ").toLowerCase();
