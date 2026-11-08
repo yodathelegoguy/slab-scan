@@ -11,9 +11,20 @@
  */
 (() => {
   const OFFERS = "slabscan.offers.v1";
-  const DEALS = "slabscan.deals.v1";
+  const DEALS = "slabscan.deals.v1";       // array of deals, shared by cloud sync
+  const ACTIVE = "slabscan.dealactive.v1"; // the deal this phone is scanning into (not synced)
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
-  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  const save = (k, v) => {
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch { return; }
+    if (k !== ACTIVE && window.SlabSync && SlabSync.changed) SlabSync.changed(); // cloud sync (sync.js), when present
+  };
+  // Lets cloud sync (sync.js) share deals and offer settings between phones.
+  function registerSync() {
+    if (!window.SlabSync || !SlabSync.collection) return;
+    SlabSync.collection({ kind: "deal", key: DEALS, type: "array" });
+    SlabSync.collection({ kind: "offercfg", key: OFFERS, type: "map" });
+  }
+  registerSync();
   const num = v => { if (v === null || v === undefined || v === "") return null; const n = parseFloat(String(v).replace(/[$,%\s]/g, "")); return isNaN(n) ? null : n; };
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = n => (n === null || n === undefined || n === "" || isNaN(n)) ? "" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -24,10 +35,16 @@
 
   const DEFAULT_TERMS = "This offer is good for today only and is based on the coins listed above. " +
     "By signing, the seller confirms they own these coins and have the right to sell them.";
-  let oc = Object.assign({ pct: 85, rules: [], guidePct: null, round: 1, business: "", businessLine: "", terms: DEFAULT_TERMS, showBid: false }, load(OFFERS, {}));
-  let store = Object.assign({ deals: [], activeId: "" }, load(DEALS, {}));
+  const OC_DEFAULTS = { pct: 85, rules: [], guidePct: null, round: 1, business: "", businessLine: "", terms: DEFAULT_TERMS, showBid: false };
+  let oc, store;
+  function loadAll() {
+    oc = Object.assign({}, OC_DEFAULTS, load(OFFERS, {}));
+    const deals = load(DEALS, []);
+    store = { deals: Array.isArray(deals) ? deals : [], activeId: load(ACTIVE, "") || "" };
+  }
+  loadAll();
   const saveOc = () => save(OFFERS, oc);
-  const saveDeals = () => save(DEALS, store);
+  const saveDeals = () => { save(DEALS, store.deals); save(ACTIVE, store.activeId); };
 
   // ---------- offer math ----------
   const haystack = c => [c.name, c.series, c.denomination, c.metal].filter(Boolean).join(" ").toLowerCase();
@@ -432,8 +449,18 @@
     if (e.detail === "settings") renderSettings();
   });
 
+  // Another phone changed shared data: reload it, unless someone is typing in our settings.
+  window.addEventListener("slabsync:changed", () => {
+    loadAll();
+    renderBar();
+    if (document.getElementById("view-deals")?.classList.contains("active") && view.mode !== "new" &&
+      !document.getElementById("deals-root").contains(document.activeElement)) render();
+    const st = document.getElementById("offer-settings");
+    if (st && !st.contains(document.activeElement)) renderSettings();
+  });
+
   window.SlabDeals = {
-    init(a) { api = a; renderBar(); renderSettings(); },
+    init(a) { api = a; registerSync(); renderBar(); renderSettings(); },
     offerFor, offerAmount, describe, offerLine, totals,
     activeId: () => (active() ? store.activeId : ""),
     dealOf: c => (c && c.dealId ? dealById(c.dealId) : null),
