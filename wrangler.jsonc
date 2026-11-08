@@ -8,7 +8,7 @@
   "assets": {
     "directory": "./docs",
     "binding": "ASSETS",
-    "run_worker_first": ["/health", "/lookup", "/status", "/greysheet/*"]
+    "run_worker_first": ["/health", "/lookup", "/status", "/spot", "/greysheet/*"]
   },
   "keep_vars": true,
   // Lets Cloudflare build preview links for pull requests (`wrangler preview`).

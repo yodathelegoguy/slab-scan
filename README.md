@@ -18,6 +18,7 @@ worker/   a tiny lookup server (Cloudflare Worker) that keeps your API keys off 
 | ANACS / ICG / CACG | Scan + save only | No public APIs. |
 | Greysheet (CDN) wholesale bid, automatic | **Needs a paid CDN dealer plan + API add-on** | CDN's API needs a Coin Dealer subscription, and wholesale (Greysheet) values need the Advanced tier (Dealer+ or Pro), billed per call with a $25/month minimum. The license allows this for your private use but not on a public website. |
 | Greysheet bid, manual | Works | Type the bid on the result screen or tap `$` on any coin in the list. |
+| Melt value from live spot | Works, no key needed | Gold, silver, platinum and palladium spot from the free gold-api.com feed (via the Worker's `/spot`, cached 5 minutes). Metal content comes from PCGS metal + weight, a built-in table of common US coins, or what you enter under "Metal content for melt value". |
 | Spreadsheet export | Works | Excel (.xlsx) and CSV, via the iOS share sheet. |
 
 ## Setup (about 15 minutes)
