@@ -71,6 +71,7 @@
     $$(".view").forEach(s => s.classList.toggle("active", s.id === "view-" + v));
     if (v !== "scan") stopScan();
     if (v === "list") renderList();
+    document.dispatchEvent(new CustomEvent("slab:view", { detail: v }));
   }
 
   // ---------- service picker ----------
@@ -279,6 +280,7 @@
           <label>Greysheet bid<input name="greysheet" inputmode="decimal" placeholder="$"></label>
           <label>Price paid<input name="paid" inputmode="decimal" placeholder="$"></label>
         </div>
+        <p id="offer-line" class="offer-line"></p>
         <label>CAC?<select name="cac"><option value="">No</option><option>Green</option><option>Gold</option></select></label>
         <label>Notes<input name="notes" placeholder="Where bought, toning, etc."></label>
         ${dup ? `<p class="notice">This cert is already in your collection.</p>` : ""}
@@ -301,13 +303,20 @@
         paid: num(f.get("paid")),
         cac: f.get("cac") || "",
         notes: f.get("notes") || "",
+        dealId: window.SlabDeals ? SlabDeals.activeId() : "",
       };
       coins.unshift(entry); save(STORE, coins); updateCount();
-      toast("Added to collection");
+      window.SlabDeals && SlabDeals.refresh();
+      toast(entry.dealId ? "Added to " + SlabDeals.sellerName(SlabDeals.dealOf(entry)) + "’s deal" : "Added to collection");
       card.classList.add("hidden");
       $("#manual-input").value = "";
       startScan();
     });
+    const updOffer = () => {
+      const el = $("#offer-line"); if (!el || !window.SlabDeals) return;
+      el.innerHTML = SlabDeals.offerLine({ ...coin, greysheet: num($("#add-form").greysheet.value) });
+    };
+    $("#add-form").greysheet.addEventListener("input", updOffer); updOffer();
     $("#scan-next").addEventListener("click", () => { card.classList.add("hidden"); startScan(); });
     $("#gs-save").addEventListener("click", () => {
       if (!saveGreysheetLink(coin)) return;
@@ -321,26 +330,32 @@
   }
 
   // ---------- collection ----------
+  // Offers and deals live in deals.js; these return nothing if it failed to load.
+  const offerOf = c => window.SlabDeals ? SlabDeals.offerAmount(c) : null;
+  const dealOf = c => window.SlabDeals ? SlabDeals.dealOf(c) : null;
   function updateCount() { $("#count").textContent = coins.length; }
   function renderList() {
     updateCount(); renderFill();
     $("#empty").classList.toggle("hidden", coins.length > 0);
     const sum = k => coins.reduce((a, c) => a + (num(c[k]) || 0), 0);
+    const offerTotal = () => coins.reduce((a, c) => a + (offerOf(c) || 0), 0);
     $("#totals").innerHTML = coins.length ? `
       <div><span>${coins.length}</span>coins</div>
       <div><span>${money(sum("greysheet")) || "$0"}</span>Greysheet</div>
       <div><span>${money(sum("priceGuide")) || "$0"}</span>PCGS guide</div>
-      <div><span>${money(sum("paid")) || "$0"}</span>Paid</div>` : "";
+      <div><span>${money(sum("paid")) || "$0"}</span>Paid</div>
+      <div><span>${money(offerTotal()) || "$0"}</span>Offer</div>` : "";
     $("#coin-list").innerHTML = coins.map(c => `
       <li class="coin" data-id="${c.id}">
         ${c.thumb ? `<img src="${esc(c.thumb)}" alt="" referrerpolicy="no-referrer">` : `<div class="ph">${esc(c.service || "?")}</div>`}
         <div class="meta">
           <b>${esc(c.name || "Unknown coin")}</b>
-          <span>${esc(c.service || "")} ${esc(c.grade || "")}${c.cac ? " · CAC " + esc(c.cac) : ""} · #${esc(c.certNo || c.rawCode || "")}</span>
+          <span>${esc(c.service || "")} ${esc(c.grade || "")}${c.cac ? " · CAC " + esc(c.cac) : ""} · #${esc(c.certNo || c.rawCode || "")}${dealOf(c) ? " · " + esc(SlabDeals.sellerName(dealOf(c))) : ""}</span>
           <span class="vals">
             ${c.greysheet != null ? `Grey ${money(c.greysheet)}` : ""}
             ${c.priceGuide != null ? ` · PCGS ${money(c.priceGuide)}` : ""}
             ${c.paid != null ? ` · Paid ${money(c.paid)}` : ""}
+            ${offerOf(c) != null ? ` · Offer ${money(offerOf(c))}` : ""}
           </span>
         </div>
         <div class="actions">
@@ -373,7 +388,8 @@
     ["Coin", c => c.name], ["Year", c => c.year], ["Mint Mark", c => c.mintMark],
     ["Denomination", c => c.denomination], ["Grade", c => c.grade], ["Designation", c => c.designation],
     ["CAC", c => c.cac], ["Variety", c => c.variety], ["Series", c => c.series],
-    ["Greysheet Bid", c => c.greysheet], ["PCGS Price Guide", c => c.priceGuide], ["Price Paid", c => c.paid],
+    ["Greysheet Bid", c => c.greysheet], ["Offer", c => offerOf(c)], ["PCGS Price Guide", c => c.priceGuide], ["Price Paid", c => c.paid],
+    ["Deal", c => dealOf(c) ? SlabDeals.sellerName(dealOf(c)) : ""], ["Deal Date", c => dealOf(c) ? dealOf(c).date : ""],
     ["Population", c => c.population], ["Pop Higher", c => c.popHigher],
     ["Mintage", c => c.mintage], ["Metal", c => c.metal], ["Notes", c => c.notes],
     ["Verify Link", c => verifyUrl(c.service, c.certNo) || ""], ["Greysheet Link", c => gsSaved(c) || greysheetUrl(c)], ["Scanned Code", c => c.rawCode],
@@ -395,7 +411,7 @@
     if (!coins.length) return toast("Nothing to export yet.");
     const ws = XLSX.utils.json_to_sheet(rows(), { header: COLUMNS.map(c => c[0]) });
     ws["!cols"] = COLUMNS.map(([h]) => ({ wch: h === "Coin" ? 34 : h === "Verify Link" ? 40 : Math.max(10, h.length + 2) }));
-    const money$ = ["Greysheet Bid", "PCGS Price Guide", "Price Paid"].map(h => COLUMNS.findIndex(c => c[0] === h));
+    const money$ = ["Greysheet Bid", "Offer", "PCGS Price Guide", "Price Paid"].map(h => COLUMNS.findIndex(c => c[0] === h));
     for (let r = 1; r <= coins.length; r++) money$.forEach(ci => {
       const cell = ws[XLSX.utils.encode_cell({ r, c: ci })]; if (cell && cell.t === "n") cell.z = "$#,##0.00";
     });
@@ -478,7 +494,8 @@
       const res = await apiLookup(p);
       if (res.limited) { toast("PCGS limit reached. Try the rest tomorrow."); break; }
       if (res.ok && res.coin) {
-        const keep = { id: c.id, addedAt: c.addedAt, greysheet: c.greysheet, paid: c.paid, cac: c.cac, notes: c.notes, rawCode: c.rawCode };
+        const keep = { id: c.id, addedAt: c.addedAt, greysheet: c.greysheet, paid: c.paid, cac: c.cac, notes: c.notes, rawCode: c.rawCode,
+          dealId: c.dealId, offerPct: c.offerPct, offerFixed: c.offerFixed };
         Object.assign(c, res.coin, keep); filled++;
       }
     }
@@ -487,5 +504,10 @@
   });
 
   updateCount();
+  window.SlabDeals && SlabDeals.init({
+    get coins() { return coins; },
+    saveCoins() { save(STORE, coins); updateCount(); },
+    toast, deliver, showView,
+  });
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
