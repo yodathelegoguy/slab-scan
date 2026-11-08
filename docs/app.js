@@ -64,13 +64,42 @@
     return true;
   }
 
+  // ---------- melt value (see melt.js) ----------
+  const hasMelt = () => typeof window.Melt !== "undefined";
+  const ozText = oz => (+oz).toFixed(oz >= 1 ? 3 : 4).replace(/0+$/, "").replace(/\.$/, "");
+  function meltValue(c) { return hasMelt() ? Melt.value(c) : null; }
+  function meltText(c) {
+    if (!hasMelt()) return "";
+    const ct = Melt.contentFor(c); if (!ct) return "";
+    const v = Melt.value(c), p = Melt.spot && Melt.spot.prices && Melt.spot.prices[ct.metal];
+    const what = `${ozText(ct.oz)} oz ${ct.metal}`;
+    return v != null ? `${money(v)} (${what} at ${money(p)})` : `${what} (spot not loaded yet)`;
+  }
+  function spotStrip() {
+    const sp = hasMelt() && Melt.spot; if (!sp || !sp.prices) return "";
+    const when = sp.updatedAt ? new Date(sp.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+    const ago = Date.now() - (sp.fetchedAt || 0) > 3600e3 ? " (offline, last known)" : "";
+    return Melt.METALS.filter(m => typeof sp.prices[m] === "number")
+      .map(m => `<span>${Melt.LABEL[m]} <b>${money(sp.prices[m])}</b></span>`).join("") +
+      `<span class="muted">Spot ${esc(when)}${ago}</span>`;
+  }
+  function refreshSpot(force) {
+    if (!hasMelt()) return Promise.resolve(null);
+    return Melt.refresh(cfg.proxy, force).catch(() => null);
+  }
+  if (hasMelt()) Melt.onUpdate(() => {
+    if ($("#view-list").classList.contains("active")) renderList();
+    const mf = $("#melt-fact"); if (mf && currentCoin) mf.textContent = meltText(currentCoin);
+  });
+  let currentCoin = null;
+
   // ---------- tabs ----------
   $$(".tab").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
   function showView(v) {
     $$(".tab").forEach(b => b.classList.toggle("active", b.dataset.view === v));
     $$(".view").forEach(s => s.classList.toggle("active", s.id === "view-" + v));
     if (v !== "scan") stopScan();
-    if (v === "list") renderList();
+    if (v === "list") { renderList(); refreshSpot(); }
   }
 
   // ---------- service picker ----------
@@ -238,8 +267,31 @@
     renderResult(coin, res, raw);
   }
 
+  // Optional metal content override, for coins PCGS has no metal data for.
+  function meltFields(c) {
+    if (!hasMelt()) return "";
+    const ct = Melt.contentFor(c);
+    const opts = [["", ct ? `Auto (${ozText(ct.oz)} oz ${ct.metal})` : "Auto (none found)"],
+      ...Melt.METALS.map(m => [m, Melt.LABEL[m]]), ["none", "No melt value"]];
+    return `<details class="melt-edit"><summary>Metal content for melt value</summary>
+      <div class="grid2">
+        <label>Metal<select name="meltMetal">${opts.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></label>
+        <label>Pure metal (troy oz)<input name="meltOz" inputmode="decimal" placeholder="${ct ? ozText(ct.oz) : "e.g. 0.7734"}"></label>
+      </div></details>`;
+  }
+  function meltFromForm(f, c) {
+    const metal = f.get("meltMetal") || "", oz = num(f.get("meltOz"));
+    if (metal === "none") return { meltMetal: "none", meltOz: null };
+    if (!metal && oz == null) return {};
+    const auto = hasMelt() ? Melt.contentFor({ ...c, meltMetal: "", meltOz: null }) : null;
+    const m = metal || (auto && auto.metal) || "silver";
+    const o = oz != null ? oz : (auto && auto.metal === m ? auto.oz : null);
+    return o > 0 ? { meltMetal: m, meltOz: o } : {};
+  }
+
   function renderResult(coin, res, raw) {
     const card = $("#result");
+    currentCoin = coin; refreshSpot();
     const vurl = verifyUrl(coin.service, coin.certNo);
     const dup = coins.find(c => c.service === coin.service && c.certNo && c.certNo === coin.certNo);
     const facts = [
@@ -247,6 +299,7 @@
       ["Grade", [coin.grade, coin.designation].filter(Boolean).join(" ")], ["Variety", coin.variety],
       ["Series", coin.series], ["Mintage", coin.mintage && Number(coin.mintage).toLocaleString()],
       ["Metal", coin.metal], ["Weight", coin.weight], ["Diameter", coin.diameter], ["Designer", coin.designer],
+      ["Melt value", meltText(coin)],
       ["PCGS Price Guide", money(coin.priceGuide)],
       ["Population", coin.population != null ? `${coin.population}${coin.popHigher != null ? ` (${coin.popHigher} higher)` : ""}` : ""],
       ["Last auction", coin.lastAuction ? `${money(coin.lastAuction.price)} · ${esc(coin.lastAuction.auctioneer || "")} ${coin.lastAuction.date ? new Date(coin.lastAuction.date).toLocaleDateString() : ""}` : ""],
@@ -264,7 +317,7 @@
       ${coin.image ? `<img class="coin-img" src="${esc(coin.image)}" alt="Coin photo" referrerpolicy="no-referrer">` : ""}
       <h2 class="coin-name">${esc(coin.name || "Unknown coin")}</h2>
       <p class="muted small">${res.cached ? "Already looked up before, so no PCGS lookup was used. " : ""}${cfg.proxy ? esc(usageText()) : ""}</p>
-      <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${k === "Last auction" ? v : esc(v)}</dd>`).join("")}</dl>
+      <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd${k === "Melt value" ? ' id="melt-fact"' : ""}>${k === "Last auction" ? v : esc(v)}</dd>`).join("")}</dl>
       <div class="links">
         ${vurl ? `<a href="${vurl}" target="_blank" rel="noopener">Verify on ${esc(coin.service)}</a>` : ""}
         ${coin.coinFactsLink ? `<a href="${esc(coin.coinFactsLink)}" target="_blank" rel="noopener">PCGS CoinFacts</a>` : ""}
@@ -281,6 +334,7 @@
         </div>
         <label>CAC?<select name="cac"><option value="">No</option><option>Green</option><option>Gold</option></select></label>
         <label>Notes<input name="notes" placeholder="Where bought, toning, etc."></label>
+        ${meltFields(coin)}
         ${dup ? `<p class="notice">This cert is already in your collection.</p>` : ""}
         <div class="row">
           <button type="submit" class="primary big">${dup ? "Add again" : "Add to collection"}</button>
@@ -301,6 +355,7 @@
         paid: num(f.get("paid")),
         cac: f.get("cac") || "",
         notes: f.get("notes") || "",
+        ...meltFromForm(f, coin),
       };
       coins.unshift(entry); save(STORE, coins); updateCount();
       toast("Added to collection");
@@ -326,11 +381,14 @@
     updateCount(); renderFill();
     $("#empty").classList.toggle("hidden", coins.length > 0);
     const sum = k => coins.reduce((a, c) => a + (num(c[k]) || 0), 0);
+    const meltSum = coins.reduce((a, c) => a + (meltValue(c) || 0), 0);
+    const spotEl = $("#spot"); if (spotEl) spotEl.innerHTML = spotStrip();
     $("#totals").innerHTML = coins.length ? `
       <div><span>${coins.length}</span>coins</div>
       <div><span>${money(sum("greysheet")) || "$0"}</span>Greysheet</div>
       <div><span>${money(sum("priceGuide")) || "$0"}</span>PCGS guide</div>
-      <div><span>${money(sum("paid")) || "$0"}</span>Paid</div>` : "";
+      <div><span>${money(sum("paid")) || "$0"}</span>Paid</div>
+      ${meltSum ? `<div><span>${money(meltSum)}</span>Melt</div>` : ""}` : "";
     $("#coin-list").innerHTML = coins.map(c => `
       <li class="coin" data-id="${c.id}">
         ${c.thumb ? `<img src="${esc(c.thumb)}" alt="" referrerpolicy="no-referrer">` : `<div class="ph">${esc(c.service || "?")}</div>`}
@@ -341,6 +399,7 @@
             ${c.greysheet != null ? `Grey ${money(c.greysheet)}` : ""}
             ${c.priceGuide != null ? ` · PCGS ${money(c.priceGuide)}` : ""}
             ${c.paid != null ? ` · Paid ${money(c.paid)}` : ""}
+            ${meltValue(c) != null ? ` · Melt ${money(meltValue(c))}` : ""}
           </span>
         </div>
         <div class="actions">
@@ -375,7 +434,12 @@
     ["CAC", c => c.cac], ["Variety", c => c.variety], ["Series", c => c.series],
     ["Greysheet Bid", c => c.greysheet], ["PCGS Price Guide", c => c.priceGuide], ["Price Paid", c => c.paid],
     ["Population", c => c.population], ["Pop Higher", c => c.popHigher],
-    ["Mintage", c => c.mintage], ["Metal", c => c.metal], ["Notes", c => c.notes],
+    ["Mintage", c => c.mintage], ["Metal", c => c.metal],
+    ["Melt Metal", c => { const m = hasMelt() && Melt.contentFor(c); return m ? Melt.LABEL[m.metal] : ""; }],
+    ["Pure Metal (oz)", c => { const m = hasMelt() && Melt.contentFor(c); return m ? m.oz : ""; }],
+    ["Melt Value", c => meltValue(c)],
+    ["Spot Used", c => { const m = hasMelt() && Melt.contentFor(c); const p = m && Melt.spot && Melt.spot.prices[m.metal]; return p ?? ""; }],
+    ["Notes", c => c.notes],
     ["Verify Link", c => verifyUrl(c.service, c.certNo) || ""], ["Greysheet Link", c => gsSaved(c) || greysheetUrl(c)], ["Scanned Code", c => c.rawCode],
   ];
   const rows = () => coins.map(c => Object.fromEntries(COLUMNS.map(([h, f]) => [h, f(c) ?? ""])));
@@ -395,7 +459,7 @@
     if (!coins.length) return toast("Nothing to export yet.");
     const ws = XLSX.utils.json_to_sheet(rows(), { header: COLUMNS.map(c => c[0]) });
     ws["!cols"] = COLUMNS.map(([h]) => ({ wch: h === "Coin" ? 34 : h === "Verify Link" ? 40 : Math.max(10, h.length + 2) }));
-    const money$ = ["Greysheet Bid", "PCGS Price Guide", "Price Paid"].map(h => COLUMNS.findIndex(c => c[0] === h));
+    const money$ = ["Greysheet Bid", "PCGS Price Guide", "Price Paid", "Melt Value", "Spot Used"].map(h => COLUMNS.findIndex(c => c[0] === h));
     for (let r = 1; r <= coins.length; r++) money$.forEach(ci => {
       const cell = ws[XLSX.utils.encode_cell({ r, c: ci })]; if (cell && cell.t === "n") cell.z = "$#,##0.00";
     });
@@ -478,7 +542,8 @@
       const res = await apiLookup(p);
       if (res.limited) { toast("PCGS limit reached. Try the rest tomorrow."); break; }
       if (res.ok && res.coin) {
-        const keep = { id: c.id, addedAt: c.addedAt, greysheet: c.greysheet, paid: c.paid, cac: c.cac, notes: c.notes, rawCode: c.rawCode };
+        const keep = { id: c.id, addedAt: c.addedAt, greysheet: c.greysheet, paid: c.paid, cac: c.cac, notes: c.notes, rawCode: c.rawCode,
+          meltMetal: c.meltMetal, meltOz: c.meltOz };
         Object.assign(c, res.coin, keep); filled++;
       }
     }
@@ -487,5 +552,6 @@
   });
 
   updateCount();
+  refreshSpot();
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();

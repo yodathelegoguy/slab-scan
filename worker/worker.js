@@ -9,6 +9,9 @@
 
 const PCGS = "https://api.pcgs.com/publicapi";
 const CDN = "https://cpgpublicapiv2.greysheet.com/api";
+// Free spot prices, no key needed. Cached for 5 minutes so the source is hit rarely.
+const SPOT = "https://api.gold-api.com/price/";
+const SPOT_SYMBOLS = { gold: "XAU", silver: "XAG", platinum: "XPT", palladium: "XPD" };
 
 export default {
   async fetch(req, env) {
@@ -17,7 +20,7 @@ export default {
 
     const url = new URL(req.url);
     const isApi = url.pathname === "/health" || url.pathname === "/lookup" || url.pathname === "/status"
-      || url.pathname.startsWith("/greysheet/");
+      || url.pathname === "/spot" || url.pathname.startsWith("/greysheet/");
     // When deployed from the repo, the same Worker also serves the phone app (docs/).
     if (!isApi && env.ASSETS) return env.ASSETS.fetch(req);
     if (url.pathname === "/" || url.pathname === "" || url.pathname === "/status") {
@@ -26,6 +29,11 @@ export default {
         ok: true, app: "Slab Scan lookup server",
         appKeySet: Boolean(env.APP_KEY), pcgsTokenSet: Boolean(env.PCGS_TOKEN),
       }, 200, cors);
+    }
+    // Spot prices are public market data, so they don't need the app passcode.
+    if (url.pathname === "/spot") {
+      try { return json(await spotPrices(), 200, { ...cors, "Cache-Control": "max-age=60" }); }
+      catch (e) { return json({ ok: false, error: "Spot prices unavailable: " + (e && e.message || e) }, 502, cors); }
     }
     const sent = (req.headers.get("X-App-Key") || "").trim();
     if (!env.APP_KEY) return json({ ok: false, error: "APP_KEY is not set on the server. Add it under Settings > Variables and Secrets." }, 401, cors);
@@ -152,6 +160,30 @@ async function lookup(params, env) {
     attempts, calls,
     canTryHarder: !deep && plan.length > 1,
   };
+}
+
+async function spotPrices() {
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const key = new Request("https://slab-scan-cache.internal/spot");
+  if (cache) { const hit = await cache.match(key); if (hit) return { ...(await hit.json()), cached: true }; }
+  const prices = {}; let updatedAt = null;
+  await Promise.all(Object.entries(SPOT_SYMBOLS).map(async ([metal, sym]) => {
+    const r = await fetch(SPOT + sym, { headers: { Accept: "application/json" } });
+    if (!r.ok) return;
+    const d = await r.json().catch(() => null);
+    if (d && typeof d.price === "number") {
+      prices[metal] = d.price;
+      if (d.updatedAt && (!updatedAt || d.updatedAt > updatedAt)) updatedAt = d.updatedAt;
+    }
+  }));
+  if (!Object.keys(prices).length) throw new Error("the price source didn't answer");
+  const out = { ok: true, prices, updatedAt: updatedAt || new Date().toISOString(), source: "gold-api.com", unit: "USD per troy oz" };
+  if (cache) {
+    await cache.put(key, new Response(JSON.stringify(out), {
+      headers: { "Content-Type": "application/json", "Cache-Control": "max-age=300" },
+    })).catch(() => {});
+  }
+  return out;
 }
 
 function normalize(d, service) {

@@ -106,7 +106,7 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .links a:active { background: var(--gold-metal); color: #fff; }
 .links .link-btn { min-height: 0; width: auto; padding: 8px 14px; font-size: 14px; font-weight: 600; background: transparent; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius); }
 
-.totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
+.totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 8px; margin-bottom: 4px; }
 .totals:empty { display: none; }
 .totals div { background: var(--panel); border: 1px solid var(--line); border-bottom: 3px solid var(--accent); border-radius: var(--radius); padding: 10px 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
 .totals span { display: block; font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--accent-text); white-space: nowrap; }
@@ -137,3 +137,10 @@ label input, label select { margin-top: 4px; color: var(--text); }
 label.check { display: flex; gap: 10px; align-items: center; color: var(--text); font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(--accent); }
 .row.wrap > button { white-space: nowrap; padding-left: 10px; padding-right: 10px; }
+
+/* Live spot prices (melt value) */
+.spot { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+.spot:empty { display: none; }
+.spot b { color: var(--accent-text); }
+.melt-edit { margin: 4px 0 8px; font-size: 14px; }
+.melt-edit summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
