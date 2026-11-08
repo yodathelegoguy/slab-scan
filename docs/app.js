@@ -101,6 +101,7 @@
     $$(".view").forEach(s => s.classList.toggle("active", s.id === "view-" + v));
     if (v !== "scan") stopScan();
     if (v === "list") { renderList(); refreshSpot(); }
+    document.dispatchEvent(new CustomEvent("slab:view", { detail: v }));
   }
 
   // ---------- service picker ----------
@@ -341,6 +342,7 @@
           <label>Greysheet bid<input name="greysheet" inputmode="decimal" placeholder="$"></label>
           <label>Price paid<input name="paid" inputmode="decimal" placeholder="$"></label>
         </div>
+        <p id="offer-line" class="offer-line"></p>
         <div class="grid2">
           <label>CAC sticker<select name="cac"><option value="">None</option><option>Green</option><option>Gold</option></select></label>
           <label>Status<select name="status">${INV.STATUSES.map(s => `<option value="${s.value}">${s.label}</option>`).join("")}</select></label>
@@ -376,13 +378,15 @@
         star: f.get("star") === "on" || /[★*]/.test(f.get("grade") || ""),
         notes: f.get("notes") || "",
         ...meltFromForm(f, coin),
+        dealId: window.SlabDeals ? SlabDeals.activeId() : "",
       };
       INV.normalize(entry);
       // Entering a price paid means it was bought, unless a status was picked.
       INV.setStatus(entry, f.get("status") || (paid != null ? "bought" : ""));
       entry.updatedAt = entry.addedAt;
       coins.unshift(entry); save(STORE, coins); updateCount();
-      toast("Added to collection");
+      window.SlabDeals && SlabDeals.refresh();
+      toast(entry.dealId ? "Added to " + SlabDeals.sellerName(SlabDeals.dealOf(entry)) + "’s deal" : "Added to collection");
       card.classList.add("hidden");
       $("#manual-input").value = "";
       startScan();
@@ -391,6 +395,11 @@
     addForm.elements.paid.addEventListener("input", e => {
       if (num(e.target.value) != null && !addForm.elements.status.value) addForm.elements.status.value = "bought";
     });
+    const updOffer = () => {
+      const el = $("#offer-line"); if (!el || !window.SlabDeals) return;
+      el.innerHTML = SlabDeals.offerLine({ ...coin, greysheet: num(addForm.elements.greysheet.value) });
+    };
+    addForm.elements.greysheet.addEventListener("input", updOffer); updOffer();
     $("#scan-next").addEventListener("click", () => { card.classList.add("hidden"); startScan(); });
     $("#gs-save").addEventListener("click", () => {
       if (!saveGreysheetLink(coin)) return;
@@ -404,6 +413,9 @@
   }
 
   // ---------- collection ----------
+  // Offers and deals live in deals.js; these return nothing if it failed to load.
+  const offerOf = c => window.SlabDeals ? SlabDeals.offerAmount(c) : null;
+  const dealOf = c => window.SlabDeals ? SlabDeals.dealOf(c) : null;
   function updateCount() { $("#count").textContent = coins.length; }
   let listFilter = load("slabscan.listfilter.v1", "all");
   const filtered = () => listFilter === "all" ? coins : coins.filter(c => (c.status || "") === (listFilter === "scanned" ? "" : listFilter));
@@ -430,6 +442,8 @@
       : [tile(t.count, "coins"), tile(money(t.greysheet) || "$0", "Greysheet"), tile(money(t.priceGuide) || "$0", "PCGS guide"),
          t.soldCount ? tile(`<b class="${t.profit < 0 ? "neg" : ""}">${money(t.profit) || "$0"}</b>`, "Profit") : tile(money(t.paid) || "$0", "Cost")];
     if (meltSum && listFilter !== "sold") tiles.push(tile(money(meltSum), "Melt"));
+    const offerSum = list.reduce((a, c) => a + (offerOf(c) || 0), 0);
+    if (offerSum && listFilter !== "sold") tiles.push(tile(money(offerSum), "Offer"));
     $("#totals").innerHTML = coins.length ? tiles.join("") : "";
     $("#coin-list").innerHTML = coins.length && !list.length ? `<li class="muted">No coins with this status.</li>` : list.map(c => {
       const p = INV.profit(c);
@@ -438,7 +452,7 @@
         ${c.thumb ? `<img src="${esc(c.thumb)}" alt="" referrerpolicy="no-referrer">` : `<div class="ph">${esc(c.service || "?")}</div>`}
         <div class="meta" role="button" tabindex="0" aria-label="Edit ${esc(c.name || "coin")}">
           <b>${esc(c.name || "Unknown coin")}</b>
-          <span>${esc(c.service || "")} ${esc(INV.gradeLabel(c))} · #${esc(c.certNo || c.rawCode || "")}</span>
+          <span>${esc(c.service || "")} ${esc(INV.gradeLabel(c))} · #${esc(c.certNo || c.rawCode || "")}${dealOf(c) ? " · " + esc(SlabDeals.sellerName(dealOf(c))) : ""}</span>
           <span class="vals">
             <i class="pill st-${c.status || "scanned"}">${INV.statusLabel(c.status)}</i>
             ${[c.greysheet != null ? `Grey ${money(c.greysheet)}` : "",
@@ -446,6 +460,7 @@
                c.paid != null ? `Cost ${money(c.paid)}` : "",
                c.status === "listed" && c.listPrice != null ? `Ask ${money(c.listPrice)}` : "",
                c.status === "sold" && c.salePrice != null ? `Sold ${money(c.salePrice)}` : "",
+               offerOf(c) != null ? `Offer ${money(offerOf(c))}` : "",
                meltValue(c) != null ? `Melt ${money(meltValue(c))}` : "",
                p != null ? `<b class="${p < 0 ? "neg" : "pos"}">${p < 0 ? "" : "+"}${money(p)}</b>` : ""].filter(Boolean).join(" · ")}
           </span>
@@ -535,9 +550,10 @@
     ["Plus", c => c.plus ? "+" : ""], ["Star", c => c.star ? "★" : ""], ["Designation", c => c.designation],
     ["CAC", c => c.cac], ["Full Grade", c => INV.gradeLabel(c)], ["Variety", c => c.variety], ["Series", c => c.series],
     ["Status", c => INV.statusLabel(c.status)],
-    ["Greysheet Bid", c => c.greysheet], ["PCGS Price Guide", c => c.priceGuide], ["Price Paid", c => c.paid],
+    ["Greysheet Bid", c => c.greysheet], ["Offer", c => offerOf(c)], ["PCGS Price Guide", c => c.priceGuide], ["Price Paid", c => c.paid],
     ["List Price", c => c.listPrice], ["Sale Price", c => c.salePrice], ["Fees", c => c.fees], ["Profit", c => INV.profit(c)],
     ["Date Bought", c => c.boughtAt], ["Date Listed", c => c.listedAt], ["Date Sold", c => c.soldAt], ["Sold To", c => c.soldTo],
+    ["Deal", c => dealOf(c) ? SlabDeals.sellerName(dealOf(c)) : ""], ["Deal Date", c => dealOf(c) ? dealOf(c).date : ""],
     ["Population", c => c.population], ["Pop Higher", c => c.popHigher],
     ["Mintage", c => c.mintage], ["Metal", c => c.metal],
     ["Melt Metal", c => { const m = hasMelt() && Melt.contentFor(c); return m ? Melt.LABEL[m.metal] : ""; }],
@@ -565,7 +581,7 @@
     if (!filtered().length) return toast("Nothing to export yet.");
     const ws = XLSX.utils.json_to_sheet(rows(), { header: COLUMNS.map(c => c[0]) });
     ws["!cols"] = COLUMNS.map(([h]) => ({ wch: h === "Coin" ? 34 : h === "Verify Link" ? 40 : Math.max(10, h.length + 2) }));
-    const money$ = ["Greysheet Bid", "PCGS Price Guide", "Price Paid", "List Price", "Sale Price", "Fees", "Profit", "Melt Value", "Spot Used"].map(h => COLUMNS.findIndex(c => c[0] === h));
+    const money$ = ["Greysheet Bid", "Offer", "PCGS Price Guide", "Price Paid", "List Price", "Sale Price", "Fees", "Profit", "Melt Value", "Spot Used"].map(h => COLUMNS.findIndex(c => c[0] === h));
     for (let r = 1; r <= filtered().length; r++) money$.forEach(ci => {
       const cell = ws[XLSX.utils.encode_cell({ r, c: ci })]; if (cell && cell.t === "n") cell.z = "$#,##0.00";
     });
@@ -672,5 +688,10 @@
 
   updateCount();
   refreshSpot();
+  window.SlabDeals && SlabDeals.init({
+    get coins() { return coins; },
+    saveCoins() { save(STORE, coins); updateCount(); },
+    toast, deliver, showView,
+  });
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();

@@ -1,5 +1,4 @@
 // Caches the app shell so it opens instantly and works without signal.
-const CACHE = "slabscan-v9";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "parse.js", "melt.js", "inventory.js", "batch.js", "deals.js",
   "sync.js", "manifest.webmanifest", "icon.svg", "icon-180.png", "scanner.js",
   "vendor/zxing-reader.js", "vendor/zxing_reader.wasm", "vendor/xlsx.mini.min.js"];

@@ -70,7 +70,7 @@
   // Fields the user owns. A fresh PCGS lookup must never overwrite them.
   const USER_FIELDS = ["id", "addedAt", "updatedAt", "greysheet", "greysheetUrl", "paid", "cac", "plus", "star",
     "notes", "rawCode", "status", "listPrice", "salePrice", "fees", "boughtAt", "listedAt", "soldAt", "soldTo",
-    "meltMetal", "meltOz"];
+    "meltMetal", "meltOz", "dealId", "offerPct", "offerFixed"];
 
   // Totals for a list of coins (after any filter).
   function totals(coins) {

@@ -19,6 +19,7 @@
     <nav class="tabs" role="tablist">
       <button class="tab active" data-view="scan" role="tab">Scan</button>
       <button class="tab" data-view="list" role="tab">Collection <span id="count" class="badge">0</span></button>
+      <button class="tab" data-view="deals" role="tab">Deals</button>
       <button class="tab" data-view="settings" role="tab">Settings</button>
     </nav>
   </header>
@@ -26,6 +27,7 @@
   <main>
     <!-- SCAN -->
     <section id="view-scan" class="view active">
+      <div id="deal-bar" class="deal-bar"></div>
       <div class="service-pick" role="radiogroup" aria-label="Grading service">
         <button class="seg active" data-service="auto">Auto</button>
         <button class="seg" data-service="PCGS">PCGS</button>
@@ -97,6 +99,11 @@
       <p id="empty" class="muted">No coins yet. Scan a slab to add one.</p>
     </section>
 
+    <!-- DEALS -->
+    <section id="view-deals" class="view">
+      <div id="deals-root"></div>
+    </section>
+
     <!-- SETTINGS -->
     <section id="view-settings" class="view">
       <form id="settings-form" class="card">
@@ -112,6 +119,7 @@
         </div>
         <p id="settings-status" class="muted"></p>
       </form>
+      <div id="offer-settings" class="card"></div>
       <div class="card">
         <h2>PCGS lookups</h2>
         <p id="usage" class="muted"></p>
@@ -178,6 +186,7 @@
   <script src="parse.js"></script>
   <script src="melt.js"></script>
   <script src="inventory.js"></script>
+  <script src="deals.js"></script>
   <script src="app.js"></script>
   <script src="batch.js"></script>
 </body>
