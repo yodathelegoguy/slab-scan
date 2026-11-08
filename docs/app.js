@@ -50,42 +50,79 @@
   setService(cfg.service || "auto");
 
   // ---------- scanner ----------
-  let scanner = null, scanning = false;
+  let live = null;
+  const status = msg => { const el = $("#scan-status"); el.textContent = msg || ""; el.classList.toggle("hidden", !msg); };
+  window.SlabScanner && SlabScanner.init().catch(() => {}); // warm up the decoder
+
   async function startScan() {
-    if (!window.Html5Qrcode) { toast("Scanner failed to load."); return; }
+    if (!window.SlabScanner) { toast("Scanner failed to load. Check your connection and reopen the app."); return; }
+    if (live && live.running) return;
     $("#result").classList.add("hidden");
     $("#reader-idle").classList.add("hidden");
-    $("#stop-scan").classList.remove("hidden");
-    const F = window.Html5QrcodeSupportedFormats;
-    scanner = scanner || new Html5Qrcode("reader", {
-      formatsToSupport: [F.CODE_128, F.CODE_39, F.CODE_93, F.QR_CODE, F.DATA_MATRIX, F.PDF_417, F.ITF],
-      useBarCodeDetectorIfSupported: true,
-      verbose: false,
+    $("#guide").classList.remove("hidden");
+    $("#cam-controls").classList.remove("hidden");
+    status("Starting camera…");
+    live = new SlabScanner.LiveScanner({
+      video: $("#video"),
+      onStatus: status,
+      onResult: text => { buzz(); resetReader(); handleCode(text); },
     });
     try {
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 12, qrbox: (w, h) => ({ width: Math.floor(w * 0.9), height: Math.floor(Math.min(h * 0.55, w * 0.6)) }), aspectRatio: 1.333 },
-        text => { if (scanning) { scanning = false; buzz(); stopScan().then(() => handleCode(text)); } },
-        () => {}
-      );
-      scanning = true;
+      const caps = await live.start();
+      // Zoom lets you hold the slab farther away, where the camera can focus.
+      if (caps.zoom && caps.zoom.max > 1) {
+        const z = $("#zoom"); z.min = caps.zoom.min || 1; z.max = Math.min(caps.zoom.max, 8); z.step = caps.zoom.step || 0.1;
+        const start = Math.min(2, z.max); z.value = start; $("#zoom-val").textContent = (+start).toFixed(1) + "×";
+        live.setZoom(start);
+        $("#zoom-wrap").classList.remove("hidden");
+      } else $("#zoom-wrap").classList.add("hidden");
+      $("#torch").classList.toggle("hidden", !caps.torch);
+      setTimeout(() => { if (live && live.running) status("Tip: back up a little and zoom in, or tap Photo."); }, 9000);
     } catch (e) {
       resetReader();
-      toast(/Permission|NotAllowed/i.test(String(e)) ? "Camera access was denied. Allow it in Settings > Safari > Camera." : "Could not start the camera.");
+      toast(/Permission|NotAllowed/i.test(String(e && e.name || e)) ? "Camera access was denied. Allow it in Settings > Safari > Camera." : "Could not start the camera. Try Photo instead.");
     }
   }
   async function stopScan() {
-    scanning = false;
-    if (scanner && scanner.isScanning) { try { await scanner.stop(); } catch {} }
+    if (live) live.stop();
     resetReader();
   }
   function resetReader() {
     $("#reader-idle").classList.remove("hidden");
-    $("#stop-scan").classList.add("hidden");
+    $("#guide").classList.add("hidden");
+    $("#cam-controls").classList.add("hidden");
+    torchOn = false; $("#torch").classList.remove("on");
+    status("");
   }
+  let torchOn = false;
+  $("#torch").addEventListener("click", async () => {
+    if (!live) return;
+    torchOn = !torchOn;
+    if (await live.setTorch(torchOn)) $("#torch").classList.toggle("on", torchOn);
+  });
+  $("#zoom").addEventListener("input", e => {
+    $("#zoom-val").textContent = (+e.target.value).toFixed(1) + "×";
+    live && live.setZoom(+e.target.value);
+  });
   $("#start-scan").addEventListener("click", startScan);
   $("#stop-scan").addEventListener("click", stopScan);
+
+  // Photo fallback: the native camera focuses and exposes better than the live preview.
+  async function onPhoto(e) {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    await stopScan();
+    $("#reader-idle").classList.add("hidden");
+    status("Reading barcode from photo…");
+    try {
+      const text = await SlabScanner.decodeFile(file);
+      resetReader();
+      if (text) { buzz(); handleCode(text); }
+      else toast("No barcode found. Make sure the barcode is sharp (back up a bit if it looks blurry) and fills a good part of the photo.");
+    } catch (err) { resetReader(); toast("Could not read that photo."); }
+  }
+  $("#photo-input").addEventListener("change", onPhoto);
+  $("#photo-input-2").addEventListener("change", onPhoto);
   $("#manual").addEventListener("submit", e => {
     e.preventDefault();
     const v = $("#manual-input").value.trim();

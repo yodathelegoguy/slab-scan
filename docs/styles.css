@@ -56,8 +56,22 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .seg.active { background: var(--panel-2); color: var(--text); }
 
 #reader-wrap { position: relative; background: #000; border-radius: 16px; overflow: hidden; min-height: 240px; }
-#reader { width: 100%; }
-#reader video { width: 100% !important; display: block; }
+#video { width: 100%; display: block; aspect-ratio: 4 / 3; object-fit: cover; background: #000; }
+#guide { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+#guide span { width: 90%; height: 50%; border: 3px solid var(--gold); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0,0,0,.35); }
+#guide span { display: flex; align-items: center; justify-content: center; }
+#guide span::after { content: ""; display: block; width: 88%; border-top: 2px solid rgba(255,80,80,.85); animation: sweep 1.6s ease-in-out infinite alternate; }
+@keyframes sweep { from { opacity: .3; } to { opacity: 1; } }
+.scan-status { position: absolute; left: 0; right: 0; bottom: 8px; margin: 0 auto; width: fit-content; max-width: 92%; background: rgba(0,0,0,.65); color: #fff; font-size: 13px; padding: 6px 12px; border-radius: 999px; text-align: center; }
+.cam-controls { margin-top: 8px; }
+.zoom { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px; }
+.zoom input { flex: 1; min-height: 32px; padding: 0; border: 0; background: transparent; accent-color: var(--gold); }
+.zoom span { font-size: 14px; color: var(--muted); }
+.zoom b { min-width: 36px; text-align: right; font-size: 14px; }
+#torch.on { background: var(--gold); color: var(--gold-ink); border-color: var(--gold); }
+.photo-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; margin: 0; min-height: 44px; padding: 10px 14px; border-radius: 12px; border: 1px solid #4a5363; color: #e8ecf2; font-weight: 600; font-size: 15px; cursor: pointer; }
+.photo-btn.inline { flex: 1; border-color: var(--line); color: var(--text); background: var(--panel); }
+.photo-btn input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 #reader-idle { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 20px; text-align: center; color: #cfd5de; background: linear-gradient(160deg, #1d232d, #0d1015); }
 
 .manual { margin-top: 16px; }

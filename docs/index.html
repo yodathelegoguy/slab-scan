@@ -33,13 +33,27 @@
       </div>
 
       <div id="reader-wrap">
-        <div id="reader"></div>
+        <video id="video" playsinline muted></video>
+        <div id="guide" class="hidden"><span></span></div>
         <div id="reader-idle">
-          <p>Point the camera at the barcode or QR code on the slab label.</p>
+          <p>Scan the barcode or QR code on the slab label.</p>
           <button id="start-scan" class="primary big">Start camera</button>
+          <label class="photo-btn">Take a photo instead
+            <input id="photo-input" type="file" accept="image/*" capture="environment">
+          </label>
+        </div>
+        <p id="scan-status" class="scan-status hidden"></p>
+      </div>
+      <div id="cam-controls" class="cam-controls hidden">
+        <div id="zoom-wrap" class="zoom hidden">
+          <span>Zoom</span><input id="zoom" type="range" min="1" max="5" step="0.1" value="1"><b id="zoom-val">1×</b>
+        </div>
+        <div class="row">
+          <button id="torch" class="hidden">Flashlight</button>
+          <label class="photo-btn inline">Photo<input id="photo-input-2" type="file" accept="image/*" capture="environment"></label>
+          <button id="stop-scan">Stop</button>
         </div>
       </div>
-      <button id="stop-scan" class="ghost hidden">Stop camera</button>
 
       <form id="manual" class="manual" autocomplete="off">
         <label for="manual-input">Or type a cert number</label>
@@ -82,9 +96,10 @@
       <div class="card">
         <h2>Scanning tips</h2>
         <ul class="muted tips">
-          <li>Hold the slab 4–6 inches away and tilt it to kill glare.</li>
-          <li>PCGS: scan the barcode or QR on the front label.</li>
-          <li>NGC: scan the barcode on the back of the label or the QR code.</li>
+          <li>Fill the guide box with the barcode. If it looks blurry, back up and use the Zoom slider instead of moving closer.</li>
+          <li>Tilt the slab slightly so the plastic doesn't reflect light straight back at the camera.</li>
+          <li>Still stuck? Tap <b>Photo</b>: the iPhone camera focuses better, and the app reads the barcode from the picture.</li>
+          <li>PCGS: barcode or QR on the front label. NGC: barcode on the back of the label, or the QR code.</li>
           <li>No signal? Type the cert number instead and the coin is still saved.</li>
         </ul>
       </div>
@@ -93,7 +108,8 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="vendor/html5-qrcode.min.js"></script>
+  <script src="vendor/zxing-reader.js"></script>
+  <script src="scanner.js"></script>
   <script src="vendor/xlsx.mini.min.js"></script>
   <script src="parse.js"></script>
   <script src="app.js"></script>
