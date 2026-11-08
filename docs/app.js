@@ -8,12 +8,21 @@
 
   // ---------- storage ----------
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
-  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast("Could not save: storage is full or blocked."); } };
+  const save = (k, v) => {
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast("Could not save: storage is full or blocked."); return; }
+    window.SlabSync && SlabSync.changed(); // share the change with the other phones (sync.js)
+  };
   let coins = load(STORE, []);
   let cfg = load(CFG, { proxy: "", appKey: "", service: "auto" });
   let gsLinks = load(GS_LINKS, {});
   // Served by the Cloudflare Worker itself? Then the lookup server is this same site.
   if (!cfg.proxy && /\.workers\.dev$/i.test(location.hostname)) cfg.proxy = location.origin;
+  // Another phone changed the shared collection: reload what sync.js saved.
+  window.addEventListener("slabsync:changed", () => {
+    coins = load(STORE, []); gsLinks = load(GS_LINKS, {});
+    updateCount();
+    if ($("#view-list").classList.contains("active")) renderList();
+  });
 
   // ---------- helpers ----------
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -293,6 +302,7 @@
       const entry = {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         addedAt: new Date().toISOString(),
+        addedBy: window.SlabSync ? SlabSync.userName() : "",
         ...coin,
         name: f.get("name") ?? coin.name,
         grade: f.get("grade") ?? coin.grade,
@@ -336,7 +346,7 @@
         ${c.thumb ? `<img src="${esc(c.thumb)}" alt="" referrerpolicy="no-referrer">` : `<div class="ph">${esc(c.service || "?")}</div>`}
         <div class="meta">
           <b>${esc(c.name || "Unknown coin")}</b>
-          <span>${esc(c.service || "")} ${esc(c.grade || "")}${c.cac ? " · CAC " + esc(c.cac) : ""} · #${esc(c.certNo || c.rawCode || "")}</span>
+          <span>${esc(c.service || "")} ${esc(c.grade || "")}${c.cac ? " · CAC " + esc(c.cac) : ""} · #${esc(c.certNo || c.rawCode || "")}${c.addedBy ? " · " + esc(c.addedBy) : ""}</span>
           <span class="vals">
             ${c.greysheet != null ? `Grey ${money(c.greysheet)}` : ""}
             ${c.priceGuide != null ? ` · PCGS ${money(c.priceGuide)}` : ""}
@@ -361,14 +371,17 @@
     }
   });
   $("#clear-all").addEventListener("click", () => {
-    if (coins.length && confirm("Delete every coin in the collection? Export first if you want a copy.")) {
+    const shared = window.SlabSync && SlabSync.enabled;
+    if (coins.length && confirm(shared
+      ? "Delete every coin in the shared collection? This removes them from every phone that shares it. Export first if you want a copy."
+      : "Delete every coin in the collection? Export first if you want a copy.")) {
       coins = []; save(STORE, coins); renderList();
     }
   });
 
   // ---------- export ----------
   const COLUMNS = [
-    ["Added", c => c.addedAt ? new Date(c.addedAt).toLocaleDateString() : ""],
+    ["Added", c => c.addedAt ? new Date(c.addedAt).toLocaleDateString() : ""], ["Added By", c => c.addedBy],
     ["Service", c => c.service], ["Cert #", c => c.certNo], ["PCGS #", c => c.pcgsNo],
     ["Coin", c => c.name], ["Year", c => c.year], ["Mint Mark", c => c.mintMark],
     ["Denomination", c => c.denomination], ["Grade", c => c.grade], ["Designation", c => c.designation],

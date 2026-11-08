@@ -137,3 +137,7 @@ label input, label select { margin-top: 4px; color: var(--text); }
 label.check { display: flex; gap: 10px; align-items: center; color: var(--text); font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(--accent); }
 .row.wrap > button { white-space: nowrap; padding-left: 10px; padding-right: 10px; }
+
+/* Shared-collection sync indicator on the Settings tab */
+.sync-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #5fbf7a; vertical-align: 2px; margin-left: 2px; }
+.sync-dot.err { background: #e0a43a; }

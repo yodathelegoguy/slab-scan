@@ -8,9 +8,12 @@
   "assets": {
     "directory": "./docs",
     "binding": "ASSETS",
-    "run_worker_first": ["/health", "/lookup", "/status", "/greysheet/*"]
+    "run_worker_first": ["/health", "/lookup", "/status", "/sync", "/greysheet/*"]
   },
   "keep_vars": true,
+  // Shared collection storage. No database_id on purpose: on deploy, Cloudflare reuses the
+  // D1 database already bound as DB, or creates "slab-scan-db" the first time.
+  "d1_databases": [{ "binding": "DB", "database_name": "slab-scan-db" }],
   // Lets Cloudflare build preview links for pull requests (`wrangler preview`).
   "previews": {}
 }
