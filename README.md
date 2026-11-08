@@ -18,6 +18,7 @@ worker/   a tiny lookup server (Cloudflare Worker) that keeps your API keys off 
 | ANACS / ICG / CACG | Scan + save only | No public APIs. |
 | Greysheet (CDN) wholesale bid, automatic | **Needs a paid CDN dealer plan + API add-on** | CDN's API needs a Coin Dealer subscription, and wholesale (Greysheet) values need the Advanced tier (Dealer+ or Pro), billed per call with a $25/month minimum. The license allows this for your private use but not on a public website. |
 | Greysheet bid, manual | Works | Type the bid on the result screen or tap `$` on any coin in the list. |
+| Batch scan a box | Works | Camera stays open; one beep per new slab, a low double beep for duplicates. Saves without PCGS lookups, so fill details in later. |
 | Spreadsheet export | Works | Excel (.xlsx) and CSV, via the iOS share sheet. |
 
 ## Setup (about 15 minutes)
