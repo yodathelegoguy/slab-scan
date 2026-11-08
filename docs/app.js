@@ -194,6 +194,9 @@
     save(CACHE_KEY, lookupCache);
   }
 
+  // With Cloudflare Access in front of the server, an expired login shows up as a redirect.
+  const SIGNIN_EXPIRED = "Your sign-in has expired. Close and reopen the app (or reload the page) to sign in again.";
+
   async function apiLookup(parsed, mode) {
     if (!cfg.proxy) return { ok: false, error: "No lookup server set. Add one in Settings to pull coin details automatically.", offline: true };
     if (!mode) {
@@ -205,7 +208,8 @@
     if (parsed.cert) q.set("cert", parsed.cert);
     if (parsed.raw && parsed.raw !== parsed.cert) q.set("barcode", parsed.raw);
     try {
-      const r = await fetch(cfg.proxy + "/lookup?" + q, { headers: { "X-App-Key": cfg.appKey } });
+      const r = await fetch(cfg.proxy + "/lookup?" + q, { headers: { "X-App-Key": cfg.appKey }, redirect: "manual" });
+      if (r.type === "opaqueredirect") return { ok: false, error: SIGNIN_EXPIRED };
       const d = await r.json().catch(() => ({ ok: false, error: `Server returned HTTP ${r.status}` }));
       addUsage(d.calls || 0);
       if (d.ok && d.coin) remember(parsed, d.coin);
@@ -436,11 +440,12 @@
     st.textContent = "Testing " + url + " …";
     let r;
     try {
-      r = await fetch(url + "/health", { headers: { "X-App-Key": cfg.appKey } });
+      r = await fetch(url + "/health", { headers: { "X-App-Key": cfg.appKey }, redirect: "manual" });
     } catch (e) {
       st.textContent = `Could not reach ${url}. Check the URL is your Worker's address (ends in .workers.dev) and that you clicked Deploy after pasting the code. (${e.message})`;
       return;
     }
+    if (r.type === "opaqueredirect") { st.textContent = SIGNIN_EXPIRED; return; }
     const text = await r.text();
     let d; try { d = JSON.parse(text); } catch {
       st.textContent = `Reached the server, but it isn't running the Slab Scan code yet (HTTP ${r.status}: "${text.slice(0, 60)}"). Paste worker.js into the Worker and Deploy.`;

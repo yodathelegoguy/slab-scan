@@ -48,5 +48,7 @@ Serve the `docs/` folder over HTTPS (camera access requires it). With GitHub Pag
 2. Open Slab Scan → Settings → paste the worker URL and your APP_KEY → Test connection.
 3. Scan away.
 
+See [SECURITY.md](SECURITY.md) for passcode lockouts, rate limits, and putting the app behind a Cloudflare Access email sign-in.
+
 ## Data and privacy
 Your collection is stored on the phone (browser storage). Export regularly; clearing Safari website data deletes it.
