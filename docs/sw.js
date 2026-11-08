@@ -1,4 +1,5 @@
 // Caches the app shell so it opens instantly and works without signal.
+const CACHE = "slabscan-v9";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "parse.js", "melt.js", "inventory.js", "batch.js", "deals.js",
   "sync.js", "manifest.webmanifest", "icon.svg", "icon-180.png", "scanner.js",
   "vendor/zxing-reader.js", "vendor/zxing_reader.wasm", "vendor/xlsx.mini.min.js"];
@@ -9,6 +10,8 @@ self.addEventListener("fetch", e => {
   const u = new URL(e.request.url);
   if (e.request.method !== "GET" || u.origin !== location.origin) return; // never cache lookups
   e.respondWith(fetch(e.request).then(r => {
-    const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r;
+    // Only keep real pages, never a sign-in redirect or an error.
+    if (r.ok && r.type === "basic") { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
+    return r;
   }).catch(() => caches.match(e.request)));
 });

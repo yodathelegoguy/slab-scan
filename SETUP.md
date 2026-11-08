@@ -42,11 +42,13 @@ The free tier allows 1,000 lookups a day.
 | Type | Variable name | Value |
 |---|---|---|
 | Secret | `PCGS_TOKEN` | the PCGS token from Part 1 |
-| Secret | `APP_KEY` | a passcode you make up, e.g. `morgan-dollar-1881` |
+| Secret | `APP_KEY` | a long passcode you make up, e.g. `brass-velvet-otter-1881-quarry` |
 
 Type the names exactly as shown (capital letters and underscores matter).
 
 **Remember the APP_KEY passcode**; you'll type it into the app once.
+
+To lock the link down further (email sign-in with Cloudflare Access), see [SECURITY.md](SECURITY.md).
 
 **Check it:** open your Worker URL in a browser. You should see `"app":"Slab Scan lookup server"` with `appKeySet` and `pcgsTokenSet` both `true`. If you see "Hello World!" instead, the code wasn't pasted or deployed (repeat 2b).
 
