@@ -104,6 +104,7 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
 .links a { color: var(--accent-text); text-decoration: none; font-weight: 700; padding: 8px 14px; border: 1px solid var(--accent); border-radius: var(--radius); font-size: 14px; transition: all .4s ease; }
 .links a:active { background: var(--gold-metal); color: #fff; }
+.links .link-btn { min-height: 0; width: auto; padding: 8px 14px; font-size: 14px; font-weight: 600; background: transparent; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius); }
 
 .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
 .totals:empty { display: none; }
@@ -119,6 +120,7 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .coin .vals { color: var(--text) !important; }
 .coin .actions { display: flex; gap: 6px; }
 .coin .actions button { min-height: 36px; min-width: 36px; padding: 0; border-radius: 8px; }
+.coin .actions a.gs { display: grid; place-items: center; min-height: 36px; min-width: 36px; border-radius: 8px; border: 1px solid var(--accent); color: var(--accent-text); font-weight: 700; text-decoration: none; }
 .tips { padding-left: 18px; margin: 0; }
 .tips li { margin-bottom: 8px; }
 .tips li::marker { color: var(--accent); }

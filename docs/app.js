@@ -4,12 +4,14 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const STORE = "slabscan.coins.v1";
   const CFG = "slabscan.config.v1";
+  const GS_LINKS = "slabscan.greysheet.v1"; // saved Greysheet page per coin type
 
   // ---------- storage ----------
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast("Could not save: storage is full or blocked."); } };
   let coins = load(STORE, []);
   let cfg = load(CFG, { proxy: "", appKey: "", service: "auto" });
+  let gsLinks = load(GS_LINKS, {});
   // Served by the Cloudflare Worker itself? Then the lookup server is this same site.
   if (!cfg.proxy && /\.workers\.dev$/i.test(location.hostname)) cfg.proxy = location.origin;
 
@@ -30,6 +32,36 @@
       o.frequency.value = 1200; g.gain.value = 0.08; o.connect(g); g.connect(ctx.destination);
       o.start(); o.stop(ctx.currentTime + 0.08);
     } catch {}
+  }
+
+  // ---------- Greysheet links ----------
+  // Greysheet has no public lookup by PCGS number, so the first time a coin type
+  // is seen we open a web search limited to greysheet.com. Once Carson saves the
+  // right page it is remembered for that PCGS # and opened directly next time.
+  const gsKey = c => c.pcgsNo ? "pcgs:" + c.pcgsNo : (c.name ? "name:" + c.name.trim().toLowerCase() : "");
+  const gsSaved = c => (gsKey(c) && gsLinks[gsKey(c)]) || c.greysheetUrl || "";
+  function gsQuery(c) {
+    const name = String(c.name || "").trim();
+    const series = c.series && !name.toLowerCase().includes(String(c.series).toLowerCase()) ? c.series : "";
+    return [name, series, c.designation].filter(Boolean).join(" ");
+  }
+  function greysheetUrl(c) {
+    const saved = gsSaved(c); if (saved) return saved;
+    const q = gsQuery(c);
+    return q ? "https://www.google.com/search?q=" + encodeURIComponent("site:greysheet.com " + q) : "https://www.greysheet.com/prices";
+  }
+  const isGsUrl = u => /^https:\/\/([a-z0-9-]+\.)?greysheet\.com\//i.test(u);
+  function saveGreysheetLink(c) {
+    const v = prompt("Paste the Greysheet page link for " + (c.name || "this coin") +
+      "\n(In Safari: Share, then Copy. Leave empty to forget the saved link.)", gsSaved(c));
+    if (v === null) return false;
+    const url = v.trim(); const key = gsKey(c);
+    if (url && !isGsUrl(url)) { toast("That isn't a greysheet.com link."); return false; }
+    if (key) { if (url) gsLinks[key] = url; else delete gsLinks[key]; save(GS_LINKS, gsLinks); }
+    c.greysheetUrl = url;
+    coins.forEach(x => { if (key && gsKey(x) === key) x.greysheetUrl = url; }); save(STORE, coins);
+    toast(url ? "Greysheet page saved for this coin" : "Saved Greysheet page removed");
+    return true;
   }
 
   // ---------- tabs ----------
@@ -236,7 +268,8 @@
       <div class="links">
         ${vurl ? `<a href="${vurl}" target="_blank" rel="noopener">Verify on ${esc(coin.service)}</a>` : ""}
         ${coin.coinFactsLink ? `<a href="${esc(coin.coinFactsLink)}" target="_blank" rel="noopener">PCGS CoinFacts</a>` : ""}
-        <a href="https://www.greysheet.com/" target="_blank" rel="noopener">Open Greysheet</a>
+        <a href="${esc(greysheetUrl(coin))}" target="_blank" rel="noopener" class="gs-link">${gsSaved(coin) ? "Open Greysheet page" : "Find on Greysheet"}</a>
+        <button type="button" id="gs-save" class="link-btn">${gsSaved(coin) ? "Change Greysheet page" : "Save Greysheet page"}</button>
       </div>
       <form id="add-form" class="add-form">
         ${res.ok ? "" : `
@@ -264,6 +297,7 @@
         name: f.get("name") ?? coin.name,
         grade: f.get("grade") ?? coin.grade,
         greysheet: num(f.get("greysheet")),
+        greysheetUrl: gsSaved(coin),
         paid: num(f.get("paid")),
         cac: f.get("cac") || "",
         notes: f.get("notes") || "",
@@ -275,6 +309,12 @@
       startScan();
     });
     $("#scan-next").addEventListener("click", () => { card.classList.add("hidden"); startScan(); });
+    $("#gs-save").addEventListener("click", () => {
+      if (!saveGreysheetLink(coin)) return;
+      const a = $(".gs-link", card); a.href = greysheetUrl(coin);
+      a.textContent = gsSaved(coin) ? "Open Greysheet page" : "Find on Greysheet";
+      $("#gs-save").textContent = gsSaved(coin) ? "Change Greysheet page" : "Save Greysheet page";
+    });
     const th = $("#try-harder"); if (th) th.addEventListener("click", () => handleCode(raw || coin.rawCode, "deep"));
     const ln = $("#lookup-now"); if (ln) ln.addEventListener("click", () => handleCode(raw || coin.rawCode, "single"));
     card.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -304,6 +344,7 @@
           </span>
         </div>
         <div class="actions">
+          <a class="gs" href="${esc(greysheetUrl(c))}" target="_blank" rel="noopener" aria-label="Open on Greysheet">G</a>
           <button class="edit-grey" aria-label="Edit Greysheet value">$</button>
           <button class="del" aria-label="Delete">✕</button>
         </div>
@@ -335,7 +376,7 @@
     ["Greysheet Bid", c => c.greysheet], ["PCGS Price Guide", c => c.priceGuide], ["Price Paid", c => c.paid],
     ["Population", c => c.population], ["Pop Higher", c => c.popHigher],
     ["Mintage", c => c.mintage], ["Metal", c => c.metal], ["Notes", c => c.notes],
-    ["Verify Link", c => verifyUrl(c.service, c.certNo) || ""], ["Scanned Code", c => c.rawCode],
+    ["Verify Link", c => verifyUrl(c.service, c.certNo) || ""], ["Greysheet Link", c => gsSaved(c) || greysheetUrl(c)], ["Scanned Code", c => c.rawCode],
   ];
   const rows = () => coins.map(c => Object.fromEntries(COLUMNS.map(([h, f]) => [h, f(c) ?? ""])));
   const fname = ext => `coins-${new Date().toISOString().slice(0, 10)}.${ext}`;
