@@ -1,6 +1,6 @@
 // Caches the app shell so it opens instantly and works without signal.
-const CACHE = "slabscan-v7";
-const SHELL = ["./", "index.html", "styles.css", "app.js", "parse.js", "manifest.webmanifest",
+const CACHE = "slabscan-v8";
+const SHELL = ["./", "index.html", "styles.css", "app.js", "parse.js", "inventory.js", "manifest.webmanifest",
   "icon.svg", "icon-180.png", "scanner.js", "vendor/zxing-reader.js", "vendor/zxing_reader.wasm", "vendor/xlsx.mini.min.js"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", e => e.waitUntil(
