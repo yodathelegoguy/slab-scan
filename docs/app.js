@@ -113,12 +113,16 @@
 
   // ---------- scanner ----------
   let live = null;
+  let scanOpts = {}; // { onCode, onStop } while batch mode (batch.js) owns the camera
   const status = msg => { const el = $("#scan-status"); el.textContent = msg || ""; el.classList.toggle("hidden", !msg); };
   window.SlabScanner && SlabScanner.init().catch(() => {}); // warm up the decoder
 
-  async function startScan() {
+  async function startScan(opts = {}) {
     if (!window.SlabScanner) { toast("Scanner failed to load. Check your connection and reopen the app."); return; }
     if (live && live.running) return;
+    scanOpts = opts;
+    const batch = typeof opts.onCode === "function";
+    document.body.classList.toggle("batching", batch);
     $("#result").classList.add("hidden");
     $("#reader-idle").classList.add("hidden");
     $("#guide").classList.remove("hidden");
@@ -127,7 +131,8 @@
     live = new SlabScanner.LiveScanner({
       video: $("#video"),
       onStatus: status,
-      onResult: text => { buzz(); resetReader(); handleCode(text); },
+      continuous: batch,
+      onResult: text => { if (batch) return opts.onCode(text); buzz(); resetReader(); handleCode(text); },
     });
     try {
       const caps = await live.start();
@@ -139,7 +144,7 @@
         $("#zoom-wrap").classList.remove("hidden");
       } else $("#zoom-wrap").classList.add("hidden");
       $("#torch").classList.toggle("hidden", !caps.torch);
-      setTimeout(() => { if (live && live.running) status("Tip: back up a little and zoom in, or tap Photo."); }, 9000);
+      if (!batch) setTimeout(() => { if (live && live.running && !scanOpts.onCode) status("Tip: back up a little and zoom in, or tap Photo."); }, 9000);
     } catch (e) {
       resetReader();
       toast(/Permission|NotAllowed/i.test(String(e && e.name || e)) ? "Camera access was denied. Allow it in Settings > Safari > Camera." : "Could not start the camera. Try Photo instead.");
@@ -155,6 +160,9 @@
     $("#cam-controls").classList.add("hidden");
     torchOn = false; $("#torch").classList.remove("on");
     status("");
+    const done = scanOpts.onStop; scanOpts = {};
+    document.body.classList.remove("batching");
+    if (done) done();
   }
   let torchOn = false;
   $("#torch").addEventListener("click", async () => {
@@ -166,7 +174,7 @@
     $("#zoom-val").textContent = (+e.target.value).toFixed(1) + "×";
     live && live.setZoom(+e.target.value);
   });
-  $("#start-scan").addEventListener("click", startScan);
+  $("#start-scan").addEventListener("click", () => startScan());
   $("#stop-scan").addEventListener("click", stopScan);
 
   // Photo fallback: the native camera focuses and exposes better than the live preview.
@@ -649,6 +657,18 @@
     save(STORE, coins); renderList();
     toast(`Filled in ${filled} of ${list.length}.`);
   });
+
+  // ---------- hooks for add-on modules (batch.js) ----------
+  window.SlabApp = {
+    get coins() { return coins; },
+    get cfg() { return cfg; },
+    addCoin(entry) {
+      INV.normalize(entry); entry.updatedAt = entry.updatedAt || entry.addedAt;
+      coins.unshift(entry); save(STORE, coins); updateCount();
+    },
+    removeCoin(id) { coins = coins.filter(x => x.id !== id); save(STORE, coins); updateCount(); },
+    fromMemory, startScan, stopScan, showView, status, toast,
+  };
 
   updateCount();
   refreshSpot();

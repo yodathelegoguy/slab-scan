@@ -38,11 +38,13 @@
         <div id="reader-idle">
           <p>Scan the barcode or QR code on the slab label.</p>
           <button id="start-scan" class="primary big">Start camera</button>
+          <button id="start-batch" class="batch-btn">Batch scan a box</button>
           <label class="photo-btn">Take a photo instead
             <input id="photo-input" type="file" accept="image/*" capture="environment">
           </label>
         </div>
         <p id="scan-status" class="scan-status hidden"></p>
+        <div id="batch-count" class="batch-count hidden" aria-live="polite">0</div>
       </div>
       <div id="cam-controls" class="cam-controls hidden">
         <div id="zoom-wrap" class="zoom hidden">
@@ -62,6 +64,20 @@
           <button type="submit" class="primary">Look up</button>
         </div>
       </form>
+
+      <div id="batch-panel" class="card batch hidden">
+        <div class="batch-head">
+          <div><h2 id="batch-title">Batch scanning</h2><p class="muted small"><b id="batch-n">0</b> added<span id="batch-dups"></span></p></div>
+          <button type="button" id="batch-close" class="link-btn" aria-label="Close batch">✕</button>
+        </div>
+        <p id="batch-hint" class="muted small"></p>
+        <div class="row">
+          <button type="button" id="batch-finish" class="primary">Finish batch</button>
+          <button type="button" id="batch-more" class="hidden">Scan more</button>
+          <button type="button" id="batch-view" class="primary hidden">View collection</button>
+        </div>
+        <ul id="batch-list" class="batch-list"></ul>
+      </div>
 
       <div id="result" class="card hidden"></div>
     </section>
@@ -111,6 +127,7 @@
           <li>Tilt the slab slightly so the plastic doesn't reflect light straight back at the camera.</li>
           <li>Still stuck? Tap <b>Photo</b>: the iPhone camera focuses better, and the app reads the barcode from the picture.</li>
           <li>PCGS: barcode or QR on the front label. NGC: barcode on the back of the label, or the QR code.</li>
+          <li>Batch scan a box: tap <b>Batch scan a box</b> and hold each slab up until it beeps. Nothing is looked up, so it doesn't use your PCGS limit. Turn off silent mode to hear the beeps.</li>
           <li>No signal? Type the cert number instead and the coin is still saved.</li>
         </ul>
       </div>
@@ -162,5 +179,6 @@
   <script src="melt.js"></script>
   <script src="inventory.js"></script>
   <script src="app.js"></script>
+  <script src="batch.js"></script>
 </body>
 </html>
