@@ -128,11 +128,13 @@
           const r = await fetch(proxy + "/sync", {
             method: "POST",
             headers: { "X-App-Key": appKey, "Content-Type": "application/json" },
+            redirect: "manual", // with Cloudflare Access on, an expired sign-in shows up as a redirect
             body: JSON.stringify({
               since: state.cursor, by: state.name || "",
               changes: chunk.map(({ h, ...c }) => c),
             }),
           });
+          if (r.type === "opaqueredirect") return report("Your Cloudflare sign-in expired. Open the lookup server's address in Safari to sign in again.", true);
           const d = await r.json().catch(() => ({ ok: false, error: `Server returned HTTP ${r.status}` }));
           if (!d.ok) {
             if (d.noDatabase) return report("The server isn't set up for sharing yet (see SETUP.md, Part 4).", true, true);
