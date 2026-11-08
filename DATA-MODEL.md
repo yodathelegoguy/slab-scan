@@ -1,0 +1,65 @@
+# Slab Scan data model
+
+Everything lives in the phone's `localStorage`, as JSON. Helpers that read or change a coin's
+inventory and grade fields are in [`docs/inventory.js`](docs/inventory.js) (`window.SlabInventory`);
+use them instead of re-implementing the rules.
+
+## Storage keys
+
+| Key | Contents |
+|---|---|
+| `slabscan.coins.v1` | Array of coin records (below), newest first. This is the collection / inventory. |
+| `slabscan.config.v1` | Settings: `proxy`, `appKey`, `service`, `autoLookup`, `dailyLimit`. |
+| `slabscan.greysheet.v1` | Saved Greysheet page per coin type: `{ "pcgs:<PCGS #>" or "name:<name>": url }`. |
+| `slabscan.lookups.v1` | Cache of PCGS lookups (coin details only, no user fields). Safe to drop. |
+| `slabscan.usage.v1` | PCGS calls used today: `{ day, calls }`. Per device. |
+| `slabscan.listfilter.v1` | Last status filter on the Collection tab. Per device. |
+
+## Coin record
+
+Two kinds of fields: **coin details** come from the PCGS lookup and can be refreshed at any time;
+**user fields** are typed by the user and must never be overwritten by a lookup
+(`SlabInventory.USER_FIELDS` lists them).
+
+### User fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Random, unique per record. Use it as the sync key. |
+| `addedAt` | ISO datetime | When the coin was added. |
+| `updatedAt` | ISO datetime | Last edit of any user field. Missing on records older than this field; treat as `addedAt`. Good for last-write-wins sync. |
+| `status` | `""` \| `"bought"` \| `"listed"` \| `"sold"` | `""` = scanned only (appraised, not bought). Old records with a `paid` value are read as `"bought"`. |
+| `paid` | number \| null | Cost: what was paid for the coin. |
+| `listPrice` | number \| null | Asking price while listed. |
+| `salePrice` | number \| null | What it sold for. |
+| `fees` | number \| null | Selling costs (eBay fees, shipping). Subtracted from profit. |
+| `boughtAt`, `listedAt`, `soldAt` | `YYYY-MM-DD` or `""` | Stamped with today's date when the coin first reaches that status; editable. |
+| `soldTo` | string | Buyer or venue. |
+| `cac` | `""` \| `"Green"` \| `"Gold"` | CAC sticker. Not in the PCGS API, so always entered by hand. |
+| `plus` | boolean | Plus (+) grade. Filled from PCGS when the grade has a `+`. |
+| `star` | boolean | Star (★) designation. Filled from the grade (`★` or `*`) when present. |
+| `greysheet` | number \| null | Greysheet bid, entered by hand. |
+| `greysheetUrl` | string | Saved Greysheet page for this coin. |
+| `notes` | string | Free text. |
+| `rawCode` | string | Exactly what was scanned or typed. |
+
+**Profit** is not stored. It is `salePrice - fees - paid` for sold coins with a sale price
+(`SlabInventory.profit(coin)`), and `null` otherwise.
+
+**Grade** is stored without `+`/`★` (`MS65`), with the marks in `plus`/`star`.
+`SlabInventory.gradeLabel(coin)` gives the full label, e.g. `MS65+★ CAC Gold`.
+Older records may still have the marks inside `grade`; `baseGrade()` and `gradeFlags()` handle both.
+
+### Coin details (from the lookup server, `normalize()` in `worker/worker.js`)
+
+`service` (`PCGS`, `NGC`, …), `certNo`, `pcgsNo`, `name`, `year`, `denomination`, `mintMark`,
+`grade`, `designation` (e.g. `PL`, `DCAM`, `RD`), `plus`, `star`, `variety`, `series`, `category`, `country`,
+`mintage`, `metal`, `weight`, `diameter`, `designer`, `priceGuide` (number), `population`, `popHigher`,
+`coinFactsLink`, `image`, `thumb`, `lastAuction` (`{ date, price, auctioneer, url }`).
+
+## Rules for code that changes records
+
+- Run `SlabInventory.normalize(coin)` on records you load from storage or another device; it fills defaults and is safe to repeat.
+- Change status with `SlabInventory.setStatus(coin, status)` so the stage date is stamped.
+- Set `updatedAt = new Date().toISOString()` whenever a user field changes.
+- When refreshing coin details from PCGS, keep every field in `USER_FIELDS`.

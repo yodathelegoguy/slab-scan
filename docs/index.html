@@ -75,6 +75,7 @@
         <button id="export-csv">Export CSV</button>
         <button id="clear-all" class="danger">Clear all</button>
       </div>
+      <div id="status-filter" class="chips" role="group" aria-label="Filter by status"></div>
       <button id="fill-missing" class="ghost hidden"></button>
       <ul id="coin-list" class="coin-list"></ul>
       <p id="empty" class="muted">No coins yet. Scan a slab to add one.</p>
@@ -116,6 +117,42 @@
     </section>
   </main>
 
+  <dialog id="editor" class="editor">
+    <form id="editor-form" autocomplete="off">
+      <h2 id="editor-title" class="coin-name"></h2>
+      <p id="editor-sub" class="muted small"></p>
+      <div class="grid2">
+        <label>Grade<input name="grade" placeholder="e.g. MS65"></label>
+        <label>CAC sticker<select name="cac"><option value="">None</option><option>Green</option><option>Gold</option></select></label>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="plus"> Plus (+) grade</label>
+        <label class="check"><input type="checkbox" name="star"> Star (★)</label>
+      </div>
+      <label>Status<select name="status">
+        <option value="">Scanned (not bought)</option><option value="bought">In stock</option>
+        <option value="listed">Listed for sale</option><option value="sold">Sold</option>
+      </select></label>
+      <div class="grid2">
+        <label>Cost (price paid)<input name="paid" inputmode="decimal" placeholder="$"></label>
+        <label>Greysheet bid<input name="greysheet" inputmode="decimal" placeholder="$"></label>
+        <label data-show="bought listed sold">Date bought<input name="boughtAt" type="date"></label>
+        <label data-show="listed sold">List price<input name="listPrice" inputmode="decimal" placeholder="$"></label>
+        <label data-show="listed sold">Date listed<input name="listedAt" type="date"></label>
+        <label data-show="sold">Sale price<input name="salePrice" inputmode="decimal" placeholder="$"></label>
+        <label data-show="sold">Fees<input name="fees" inputmode="decimal" placeholder="$ (eBay, shipping…)"></label>
+        <label data-show="sold">Date sold<input name="soldAt" type="date"></label>
+      </div>
+      <label data-show="sold">Sold to<input name="soldTo" placeholder="Customer, show, eBay…"></label>
+      <p id="editor-profit" class="profit"></p>
+      <label>Notes<input name="notes"></label>
+      <div class="row">
+        <button type="button" id="editor-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="vendor/zxing-reader.js"></script>
@@ -123,6 +160,7 @@
   <script src="vendor/xlsx.mini.min.js"></script>
   <script src="parse.js"></script>
   <script src="melt.js"></script>
+  <script src="inventory.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

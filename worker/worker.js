@@ -198,6 +198,10 @@ function normalize(d, service) {
     mintMark: d.MintMark || "",
     grade: d.Grade || "",
     designation: d.Designation || "",
+    // Plus and star designations (see DATA-MODEL.md). PCGS puts "+" in the grade
+    // and may also send a flag; NGC-style stars show as "★" or "*" in the grade.
+    plus: d.IsPlusGrade === true || d.PlusGrade === true || /\+/.test(String(d.Grade || "")),
+    star: d.IsStar === true || d.Star === true || /[★*]/.test(String(d.Grade || "")) || /\bstar\b/i.test(String(d.Designation || "")),
     variety: [d.MajorVariety, d.MinorVariety, d.DieVariety].filter(Boolean).join(" / "),
     series: d.SeriesName || "",
     category: d.Category || "",

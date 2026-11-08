@@ -9,7 +9,8 @@
   // ---------- storage ----------
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast("Could not save: storage is full or blocked."); } };
-  let coins = load(STORE, []);
+  const INV = window.SlabInventory;
+  let coins = load(STORE, []).map(INV.normalize);
   let cfg = load(CFG, { proxy: "", appKey: "", service: "auto" });
   let gsLinks = load(GS_LINKS, {});
   // Served by the Cloudflare Worker itself? Then the lookup server is this same site.
@@ -296,7 +297,7 @@
     const dup = coins.find(c => c.service === coin.service && c.certNo && c.certNo === coin.certNo);
     const facts = [
       ["Service", coin.service], ["Cert #", coin.certNo], ["PCGS #", coin.pcgsNo],
-      ["Grade", [coin.grade, coin.designation].filter(Boolean).join(" ")], ["Variety", coin.variety],
+      ["Grade", INV.gradeLabel(coin, { cac: false })], ["Variety", coin.variety],
       ["Series", coin.series], ["Mintage", coin.mintage && Number(coin.mintage).toLocaleString()],
       ["Metal", coin.metal], ["Weight", coin.weight], ["Diameter", coin.diameter], ["Designer", coin.designer],
       ["Melt value", meltText(coin)],
@@ -332,7 +333,14 @@
           <label>Greysheet bid<input name="greysheet" inputmode="decimal" placeholder="$"></label>
           <label>Price paid<input name="paid" inputmode="decimal" placeholder="$"></label>
         </div>
-        <label>CAC?<select name="cac"><option value="">No</option><option>Green</option><option>Gold</option></select></label>
+        <div class="grid2">
+          <label>CAC sticker<select name="cac"><option value="">None</option><option>Green</option><option>Gold</option></select></label>
+          <label>Status<select name="status">${INV.STATUSES.map(s => `<option value="${s.value}">${s.label}</option>`).join("")}</select></label>
+        </div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" name="plus" ${INV.gradeFlags(coin).plus ? "checked" : ""}> Plus (+) grade</label>
+          <label class="check"><input type="checkbox" name="star" ${INV.gradeFlags(coin).star ? "checked" : ""}> Star (★)</label>
+        </div>
         <label>Notes<input name="notes" placeholder="Where bought, toning, etc."></label>
         ${meltFields(coin)}
         ${dup ? `<p class="notice">This cert is already in your collection.</p>` : ""}
@@ -344,24 +352,36 @@
     $("#add-form").addEventListener("submit", e => {
       e.preventDefault();
       const f = new FormData(e.target);
+      const paid = num(f.get("paid"));
       const entry = {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         addedAt: new Date().toISOString(),
         ...coin,
         name: f.get("name") ?? coin.name,
-        grade: f.get("grade") ?? coin.grade,
+        // Plus/star live in their own fields; a typed "MS65+" still counts as plus.
+        grade: INV.baseGrade(f.get("grade") ?? coin.grade),
         greysheet: num(f.get("greysheet")),
         greysheetUrl: gsSaved(coin),
-        paid: num(f.get("paid")),
+        paid,
         cac: f.get("cac") || "",
+        plus: f.get("plus") === "on" || /\+/.test(f.get("grade") || ""),
+        star: f.get("star") === "on" || /[★*]/.test(f.get("grade") || ""),
         notes: f.get("notes") || "",
         ...meltFromForm(f, coin),
       };
+      INV.normalize(entry);
+      // Entering a price paid means it was bought, unless a status was picked.
+      INV.setStatus(entry, f.get("status") || (paid != null ? "bought" : ""));
+      entry.updatedAt = entry.addedAt;
       coins.unshift(entry); save(STORE, coins); updateCount();
       toast("Added to collection");
       card.classList.add("hidden");
       $("#manual-input").value = "";
       startScan();
+    });
+    const addForm = $("#add-form");
+    addForm.elements.paid.addEventListener("input", e => {
+      if (num(e.target.value) != null && !addForm.elements.status.value) addForm.elements.status.value = "bought";
     });
     $("#scan-next").addEventListener("click", () => { card.classList.add("hidden"); startScan(); });
     $("#gs-save").addEventListener("click", () => {
@@ -377,29 +397,49 @@
 
   // ---------- collection ----------
   function updateCount() { $("#count").textContent = coins.length; }
+  let listFilter = load("slabscan.listfilter.v1", "all");
+  const filtered = () => listFilter === "all" ? coins : coins.filter(c => (c.status || "") === (listFilter === "scanned" ? "" : listFilter));
+  function renderFilters() {
+    const counts = {}; coins.forEach(c => { const k = c.status || "scanned"; counts[k] = (counts[k] || 0) + 1; });
+    const opts = [["all", "All", coins.length], ...INV.STATUSES.map(s => [s.value || "scanned", s.short, counts[s.value || "scanned"] || 0])];
+    $("#status-filter").innerHTML = coins.length ? opts.map(([v, l, k]) =>
+      `<button type="button" class="chip${listFilter === v ? " active" : ""}" data-filter="${v}">${l} <span>${k}</span></button>`).join("") : "";
+  }
+  $("#status-filter").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    listFilter = b.dataset.filter; save("slabscan.listfilter.v1", listFilter); renderList();
+  });
   function renderList() {
-    updateCount(); renderFill();
+    updateCount(); renderFill(); renderFilters();
+    const list = filtered();
     $("#empty").classList.toggle("hidden", coins.length > 0);
-    const sum = k => coins.reduce((a, c) => a + (num(c[k]) || 0), 0);
-    const meltSum = coins.reduce((a, c) => a + (meltValue(c) || 0), 0);
+    const t = INV.totals(list);
+    const meltSum = list.reduce((a, c) => a + (meltValue(c) || 0), 0);
     const spotEl = $("#spot"); if (spotEl) spotEl.innerHTML = spotStrip();
-    $("#totals").innerHTML = coins.length ? `
-      <div><span>${coins.length}</span>coins</div>
-      <div><span>${money(sum("greysheet")) || "$0"}</span>Greysheet</div>
-      <div><span>${money(sum("priceGuide")) || "$0"}</span>PCGS guide</div>
-      <div><span>${money(sum("paid")) || "$0"}</span>Paid</div>
-      ${meltSum ? `<div><span>${money(meltSum)}</span>Melt</div>` : ""}` : "";
-    $("#coin-list").innerHTML = coins.map(c => `
+    const tile = (v, l) => `<div><span>${v}</span>${l}</div>`;
+    const tiles = listFilter === "sold"
+      ? [tile(t.count, "sold"), tile(money(t.sales) || "$0", "Sales"), tile(money(t.paid) || "$0", "Cost"), tile(`<b class="${t.profit < 0 ? "neg" : ""}">${money(t.profit) || "$0"}</b>`, "Profit")]
+      : [tile(t.count, "coins"), tile(money(t.greysheet) || "$0", "Greysheet"), tile(money(t.priceGuide) || "$0", "PCGS guide"),
+         t.soldCount ? tile(`<b class="${t.profit < 0 ? "neg" : ""}">${money(t.profit) || "$0"}</b>`, "Profit") : tile(money(t.paid) || "$0", "Cost")];
+    if (meltSum && listFilter !== "sold") tiles.push(tile(money(meltSum), "Melt"));
+    $("#totals").innerHTML = coins.length ? tiles.join("") : "";
+    $("#coin-list").innerHTML = coins.length && !list.length ? `<li class="muted">No coins with this status.</li>` : list.map(c => {
+      const p = INV.profit(c);
+      return `
       <li class="coin" data-id="${c.id}">
         ${c.thumb ? `<img src="${esc(c.thumb)}" alt="" referrerpolicy="no-referrer">` : `<div class="ph">${esc(c.service || "?")}</div>`}
-        <div class="meta">
+        <div class="meta" role="button" tabindex="0" aria-label="Edit ${esc(c.name || "coin")}">
           <b>${esc(c.name || "Unknown coin")}</b>
-          <span>${esc(c.service || "")} ${esc(c.grade || "")}${c.cac ? " · CAC " + esc(c.cac) : ""} · #${esc(c.certNo || c.rawCode || "")}</span>
+          <span>${esc(c.service || "")} ${esc(INV.gradeLabel(c))} · #${esc(c.certNo || c.rawCode || "")}</span>
           <span class="vals">
-            ${c.greysheet != null ? `Grey ${money(c.greysheet)}` : ""}
-            ${c.priceGuide != null ? ` · PCGS ${money(c.priceGuide)}` : ""}
-            ${c.paid != null ? ` · Paid ${money(c.paid)}` : ""}
-            ${meltValue(c) != null ? ` · Melt ${money(meltValue(c))}` : ""}
+            <i class="pill st-${c.status || "scanned"}">${INV.statusLabel(c.status)}</i>
+            ${[c.greysheet != null ? `Grey ${money(c.greysheet)}` : "",
+               c.priceGuide != null ? `PCGS ${money(c.priceGuide)}` : "",
+               c.paid != null ? `Cost ${money(c.paid)}` : "",
+               c.status === "listed" && c.listPrice != null ? `Ask ${money(c.listPrice)}` : "",
+               c.status === "sold" && c.salePrice != null ? `Sold ${money(c.salePrice)}` : "",
+               meltValue(c) != null ? `Melt ${money(meltValue(c))}` : "",
+               p != null ? `<b class="${p < 0 ? "neg" : "pos"}">${p < 0 ? "" : "+"}${money(p)}</b>` : ""].filter(Boolean).join(" · ")}
           </span>
         </div>
         <div class="actions">
@@ -407,7 +447,7 @@
           <button class="edit-grey" aria-label="Edit Greysheet value">$</button>
           <button class="del" aria-label="Delete">✕</button>
         </div>
-      </li>`).join("");
+      </li>`; }).join("");
   }
   $("#coin-list").addEventListener("click", e => {
     const li = e.target.closest(".coin"); if (!li) return;
@@ -416,9 +456,62 @@
       if (confirm(`Remove ${c.name || "this coin"}?`)) { coins = coins.filter(x => x !== c); save(STORE, coins); renderList(); }
     } else if (e.target.closest(".edit-grey")) {
       const v = prompt("Greysheet bid for " + (c.name || "this coin"), c.greysheet ?? "");
-      if (v !== null) { c.greysheet = num(v); save(STORE, coins); renderList(); }
-    }
+      if (v !== null) { c.greysheet = num(v); c.updatedAt = new Date().toISOString(); save(STORE, coins); renderList(); }
+    } else if (e.target.closest(".meta")) openEditor(c);
   });
+  $("#coin-list").addEventListener("keydown", e => {
+    if (e.key !== "Enter" || !e.target.matches(".meta")) return;
+    const c = coins.find(x => x.id === e.target.closest(".coin").dataset.id); if (c) openEditor(c);
+  });
+
+  // ---------- coin editor (status, prices, CAC, plus/star) ----------
+  const dlg = $("#editor");
+  let editing = null;
+  function openEditor(c) {
+    editing = c;
+    const f = $("#editor-form"), fl = INV.gradeFlags(c);
+    $("#editor-title").textContent = c.name || "Unknown coin";
+    $("#editor-sub").textContent = [c.service, c.certNo && "#" + c.certNo].filter(Boolean).join(" ");
+    f.elements.grade.value = INV.baseGrade(c.grade);
+    f.elements.plus.checked = fl.plus; f.elements.star.checked = fl.star;
+    f.elements.cac.value = c.cac || "";
+    f.elements.status.value = c.status || "";
+    for (const k of ["paid", "greysheet", "listPrice", "salePrice", "fees"]) f.elements[k].value = c[k] ?? "";
+    for (const k of ["boughtAt", "listedAt", "soldAt", "soldTo", "notes"]) f.elements[k].value = c[k] || "";
+    syncEditor();
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
+  }
+  function syncEditor() {
+    const f = $("#editor-form"), st = f.elements.status.value;
+    $$("[data-show]", f).forEach(el => el.classList.toggle("hidden", !el.dataset.show.split(" ").includes(st)));
+    const draft = { status: st, paid: f.elements.paid.value, salePrice: f.elements.salePrice.value, fees: f.elements.fees.value };
+    const p = INV.profit(draft);
+    $("#editor-profit").innerHTML = p == null ? "" : `Profit <b class="${p < 0 ? "neg" : "pos"}">${money(p)}</b>`;
+  }
+  $("#editor-form").addEventListener("input", syncEditor);
+  $("#editor-form").elements.status.addEventListener("change", e => {
+    // Stamp today's date for the new stage so the date field isn't left blank.
+    const f = $("#editor-form"), tmp = { boughtAt: f.elements.boughtAt.value, listedAt: f.elements.listedAt.value, soldAt: f.elements.soldAt.value };
+    INV.setStatus(tmp, e.target.value);
+    for (const k of ["boughtAt", "listedAt", "soldAt"]) f.elements[k].value = tmp[k] || "";
+    if (e.target.value === "sold" && !f.elements.salePrice.value && f.elements.listPrice.value) f.elements.salePrice.value = f.elements.listPrice.value;
+    syncEditor();
+  });
+  const closeEditor = () => { editing = null; if (dlg.close) dlg.close(); else dlg.removeAttribute("open"); };
+  $("#editor-cancel").addEventListener("click", closeEditor);
+  $("#editor-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const c = editing; if (!c) return closeEditor();
+    const f = e.target.elements;
+    c.grade = f.grade.value.trim(); c.plus = f.plus.checked; c.star = f.star.checked;
+    c.cac = f.cac.value;
+    for (const k of ["paid", "greysheet", "listPrice", "salePrice", "fees"]) c[k] = num(f[k].value);
+    for (const k of ["boughtAt", "listedAt", "soldAt", "soldTo", "notes"]) c[k] = f[k].value.trim();
+    INV.setStatus(c, f.status.value);
+    c.updatedAt = new Date().toISOString();
+    save(STORE, coins); closeEditor(); renderList(); toast("Saved");
+  });
+
   $("#clear-all").addEventListener("click", () => {
     if (coins.length && confirm("Delete every coin in the collection? Export first if you want a copy.")) {
       coins = []; save(STORE, coins); renderList();
@@ -430,9 +523,13 @@
     ["Added", c => c.addedAt ? new Date(c.addedAt).toLocaleDateString() : ""],
     ["Service", c => c.service], ["Cert #", c => c.certNo], ["PCGS #", c => c.pcgsNo],
     ["Coin", c => c.name], ["Year", c => c.year], ["Mint Mark", c => c.mintMark],
-    ["Denomination", c => c.denomination], ["Grade", c => c.grade], ["Designation", c => c.designation],
-    ["CAC", c => c.cac], ["Variety", c => c.variety], ["Series", c => c.series],
+    ["Denomination", c => c.denomination], ["Grade", c => INV.baseGrade(c.grade)],
+    ["Plus", c => c.plus ? "+" : ""], ["Star", c => c.star ? "★" : ""], ["Designation", c => c.designation],
+    ["CAC", c => c.cac], ["Full Grade", c => INV.gradeLabel(c)], ["Variety", c => c.variety], ["Series", c => c.series],
+    ["Status", c => INV.statusLabel(c.status)],
     ["Greysheet Bid", c => c.greysheet], ["PCGS Price Guide", c => c.priceGuide], ["Price Paid", c => c.paid],
+    ["List Price", c => c.listPrice], ["Sale Price", c => c.salePrice], ["Fees", c => c.fees], ["Profit", c => INV.profit(c)],
+    ["Date Bought", c => c.boughtAt], ["Date Listed", c => c.listedAt], ["Date Sold", c => c.soldAt], ["Sold To", c => c.soldTo],
     ["Population", c => c.population], ["Pop Higher", c => c.popHigher],
     ["Mintage", c => c.mintage], ["Metal", c => c.metal],
     ["Melt Metal", c => { const m = hasMelt() && Melt.contentFor(c); return m ? Melt.LABEL[m.metal] : ""; }],
@@ -442,8 +539,9 @@
     ["Notes", c => c.notes],
     ["Verify Link", c => verifyUrl(c.service, c.certNo) || ""], ["Greysheet Link", c => gsSaved(c) || greysheetUrl(c)], ["Scanned Code", c => c.rawCode],
   ];
-  const rows = () => coins.map(c => Object.fromEntries(COLUMNS.map(([h, f]) => [h, f(c) ?? ""])));
-  const fname = ext => `coins-${new Date().toISOString().slice(0, 10)}.${ext}`;
+  // Exports what the Collection tab shows: every coin, or only the chosen status.
+  const rows = () => filtered().map(c => Object.fromEntries(COLUMNS.map(([h, f]) => [h, f(c) ?? ""])));
+  const fname = ext => `coins-${listFilter === "all" ? "" : listFilter + "-"}${new Date().toISOString().slice(0, 10)}.${ext}`;
 
   async function deliver(blob, name) {
     const file = new File([blob], name, { type: blob.type });
@@ -456,11 +554,11 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
   $("#export-xlsx").addEventListener("click", () => {
-    if (!coins.length) return toast("Nothing to export yet.");
+    if (!filtered().length) return toast("Nothing to export yet.");
     const ws = XLSX.utils.json_to_sheet(rows(), { header: COLUMNS.map(c => c[0]) });
     ws["!cols"] = COLUMNS.map(([h]) => ({ wch: h === "Coin" ? 34 : h === "Verify Link" ? 40 : Math.max(10, h.length + 2) }));
-    const money$ = ["Greysheet Bid", "PCGS Price Guide", "Price Paid", "Melt Value", "Spot Used"].map(h => COLUMNS.findIndex(c => c[0] === h));
-    for (let r = 1; r <= coins.length; r++) money$.forEach(ci => {
+    const money$ = ["Greysheet Bid", "PCGS Price Guide", "Price Paid", "List Price", "Sale Price", "Fees", "Profit", "Melt Value", "Spot Used"].map(h => COLUMNS.findIndex(c => c[0] === h));
+    for (let r = 1; r <= filtered().length; r++) money$.forEach(ci => {
       const cell = ws[XLSX.utils.encode_cell({ r, c: ci })]; if (cell && cell.t === "n") cell.z = "$#,##0.00";
     });
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Coins");
@@ -468,7 +566,7 @@
     deliver(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fname("xlsx"));
   });
   $("#export-csv").addEventListener("click", () => {
-    if (!coins.length) return toast("Nothing to export yet.");
+    if (!filtered().length) return toast("Nothing to export yet.");
     const q = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const csv = [COLUMNS.map(c => q(c[0])).join(","), ...rows().map(r => COLUMNS.map(([h]) => q(r[h])).join(","))].join("\n");
     deliver(new Blob([csv], { type: "text/csv" }), fname("csv"));
@@ -542,9 +640,10 @@
       const res = await apiLookup(p);
       if (res.limited) { toast("PCGS limit reached. Try the rest tomorrow."); break; }
       if (res.ok && res.coin) {
-        const keep = { id: c.id, addedAt: c.addedAt, greysheet: c.greysheet, paid: c.paid, cac: c.cac, notes: c.notes, rawCode: c.rawCode,
-          meltMetal: c.meltMetal, meltOz: c.meltOz };
-        Object.assign(c, res.coin, keep); filled++;
+        const keep = Object.fromEntries(INV.USER_FIELDS.filter(k => k in c).map(k => [k, c[k]]));
+        // Keep plus/star the user set, but take PCGS's when they had none.
+        const fresh = INV.normalize({ ...res.coin });
+        Object.assign(c, res.coin, keep, { plus: c.plus || fresh.plus, star: c.star || fresh.star }); filled++;
       }
     }
     save(STORE, coins); renderList();

@@ -144,3 +144,26 @@ label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(
 .spot b { color: var(--accent-text); }
 .melt-edit { margin: 4px 0 8px; font-size: 14px; }
 .melt-edit summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+
+/* inventory status filter, pills and coin editor */
+.chips { display: flex; gap: 6px; overflow-x: auto; margin-top: 12px; padding-bottom: 2px; scrollbar-width: none; }
+.chips:empty { display: none; }
+.chip { flex: none; min-height: 34px; padding: 6px 12px; border-radius: 999px; font-size: 13px; color: var(--muted); background: var(--panel); }
+.chip span { font-weight: 400; opacity: .8; margin-left: 2px; }
+.chip.active { background: var(--gold-metal); color: #fff; border-color: transparent; text-shadow: 1px 1px 1px rgba(0,0,0,.6); }
+.coin .meta[role="button"] { cursor: pointer; }
+.pill { font-style: normal; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-right: 4px; }
+.pill.st-bought { border-color: var(--accent); color: var(--accent-text); }
+.pill.st-listed { border-color: #5b8fd6; color: #7fa8e3; }
+.pill.st-sold { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.pos { color: #5fb878; } .neg { color: var(--danger); }
+.totals .neg { color: var(--danger); } .totals b { font: inherit; }
+.checks { display: flex; gap: 18px; flex-wrap: wrap; }
+.checks label.check { margin: 10px 0 0; }
+.editor { width: min(560px, calc(100% - 24px)); max-height: calc(100% - 40px); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: var(--radius-lg); padding: 18px 16px; }
+.editor::backdrop { background: rgba(0,0,0,.55); }
+.editor .coin-name { margin-bottom: 0; }
+.editor #editor-sub { margin: 2px 0 4px; }
+.profit { margin: 12px 0 0; font-size: 15px; }
+.profit:empty { display: none; }
+input[type="date"] { min-height: 44px; -webkit-appearance: none; appearance: none; }
