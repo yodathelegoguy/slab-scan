@@ -253,11 +253,10 @@ const SCHEMA = [
     PRIMARY KEY (kind, id))`,
   `CREATE INDEX IF NOT EXISTS sync_records_seq ON sync_records (seq)`,
 ];
-let schemaReady = false;
 const PAGE = 500, MAX_PUSH = 500, MAX_DATA = 256 * 1024;
 
 async function sync(db, body) {
-  if (!schemaReady) { await db.batch(SCHEMA.map(q => db.prepare(q))); schemaReady = true; }
+  await schema({ DB: db });
   const by = String(body.by || "").trim().slice(0, 60) || null;
   const now = Date.now();
   const changes = Array.isArray(body.changes) ? body.changes.slice(0, MAX_PUSH) : [];
@@ -383,11 +382,14 @@ async function safeEqual(a, b) {
   return diff === 0;
 }
 
-// Tables are created on first use, so there's nothing to set up by hand.
+// All tables in the one D1 database (binding DB): sync_records (shared collection),
+// sec_auth_fail (passcode lockouts) and pcgs_cache. They're created on first use, so
+// there's nothing to set up by hand.
 let schemaReady = null;
 function schema(env) {
   if (!env.DB) return Promise.resolve(false);
   schemaReady ||= env.DB.batch([
+    ...SCHEMA.map(q => env.DB.prepare(q)),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS sec_auth_fail (ip TEXT PRIMARY KEY, fails INTEGER NOT NULL, window_start INTEGER NOT NULL, locked_until INTEGER NOT NULL DEFAULT 0)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS pcgs_cache (path TEXT PRIMARY KEY, body TEXT NOT NULL, saved_at INTEGER NOT NULL)"),
   ]).then(() => true).catch(e => { schemaReady = null; throw e; });

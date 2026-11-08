@@ -698,7 +698,11 @@
     get cfg() { return cfg; },
     addCoin(entry) {
       INV.normalize(entry); entry.updatedAt = entry.updatedAt || entry.addedAt;
+      // Batch scans join the open deal and carry who scanned them, like single scans.
+      if (!entry.addedBy && window.SlabSync) entry.addedBy = SlabSync.userName();
+      if (!entry.dealId && window.SlabDeals) entry.dealId = SlabDeals.activeId();
       coins.unshift(entry); save(STORE, coins); updateCount();
+      window.SlabDeals && SlabDeals.refresh();
     },
     removeCoin(id) { coins = coins.filter(x => x.id !== id); save(STORE, coins); updateCount(); },
     fromMemory, startScan, stopScan, showView, status, toast,
