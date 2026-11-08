@@ -133,7 +133,8 @@
   async function apiLookup(parsed) {
     if (!cfg.proxy) return { ok: false, error: "No lookup server set. Add one in Settings to pull coin details automatically.", offline: true };
     const q = new URLSearchParams({ service: parsed.service || "PCGS" });
-    if (parsed.kind === "cert") q.set("cert", parsed.cert); else q.set("barcode", parsed.raw);
+    if (parsed.cert) q.set("cert", parsed.cert);
+    if (parsed.raw && parsed.raw !== parsed.cert) q.set("barcode", parsed.raw);
     try {
       const r = await fetch(cfg.proxy + "/lookup?" + q, { headers: { "X-App-Key": cfg.appKey } });
       const d = await r.json().catch(() => ({ ok: false, error: `Server returned HTTP ${r.status}` }));
@@ -179,7 +180,11 @@
     ].filter(([, v]) => v !== "" && v != null);
 
     card.innerHTML = `
-      ${res.ok ? "" : `<div class="notice">${esc(res.error || "Lookup failed.")} You can still fill in the details and save it.</div>`}
+      ${res.ok ? "" : `<div class="notice error"><b>No coin details found.</b> ${esc(res.error || "Lookup failed.")}
+        <details><summary>What was scanned</summary>
+          <p>Scanned text: <code>${esc(coin.rawCode || "")}</code></p>
+          ${(res.attempts || []).map(a => `<p><code>${esc(a.try)}</code> → ${esc(a.status != null ? "HTTP " + a.status + ": " : "")}${esc(a.result)}</p>`).join("")}
+        </details></div>`}
       ${coin.image ? `<img class="coin-img" src="${esc(coin.image)}" alt="Coin photo" referrerpolicy="no-referrer">` : ""}
       <h2 class="coin-name">${esc(coin.name || "Unknown coin")}</h2>
       <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${k === "Last auction" ? v : esc(v)}</dd>`).join("")}</dl>

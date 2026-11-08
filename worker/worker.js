@@ -68,31 +68,60 @@ export default {
 
 async function lookup(params, env) {
   const service = (params.get("service") || "PCGS").toUpperCase();
-  const cert = params.get("cert");
-  const barcode = params.get("barcode");
+  const cert = (params.get("cert") || "").trim();
+  const barcode = (params.get("barcode") || "").trim();
   if (!env.PCGS_TOKEN) return { ok: false, error: "PCGS_TOKEN is not set on the server." };
-
-  let path;
-  if (barcode) {
-    // PCGS decodes both PCGS and NGC holder barcodes.
-    path = `/coindetail/GetCoinFactsByBarcode?barcode=${encodeURIComponent(barcode)}&gradingService=${service === "NGC" ? "NGC" : "PCGS"}`;
-  } else if (cert && service === "PCGS") {
-    path = `/coindetail/GetCoinFactsByCertNo/${encodeURIComponent(cert)}`;
-  } else if (cert && service === "NGC") {
-    // NGC has no public API; a typed NGC cert can't be decoded server-side.
-    return { ok: false, error: "NGC has no public lookup API. Scan the NGC barcode instead, or open the NGC verification link.", unsupported: true };
-  } else {
-    return { ok: false, error: "Send cert or barcode." };
-  }
-
   const token = String(env.PCGS_TOKEN).trim().replace(/^bearer\s+/i, "");
-  const r = await fetch(PCGS + path, { headers: { Authorization: `bearer ${token}` } });
-  if (r.status === 204) return { ok: false, error: "PCGS has no data for that code." };
-  if (r.status === 500) return { ok: false, error: "PCGS rejected the request (usually an expired or invalid token)." };
-  if (!r.ok) return { ok: false, error: `PCGS returned HTTP ${r.status}.` };
-  const d = await r.json();
-  if (d.IsValidRequest === false) return { ok: false, error: d.ServerMessage || "PCGS could not find that coin." };
-  return { ok: true, source: "PCGS CoinFacts", coin: normalize(d, service) };
+  const gs = service === "NGC" ? "NGC" : "PCGS";
+
+  // Build every reasonable way PCGS might recognise this slab, most specific first.
+  const plan = [];
+  const add = (label, path) => { if (!plan.some(p => p.path === path)) plan.push({ label, path }); };
+  const byCert = c => add(`cert ${c}`, `/coindetail/GetCoinFactsByCertNo/${encodeURIComponent(c)}`);
+  const byBarcode = (b, svc) => add(`barcode ${b} (${svc})`, `/coindetail/GetCoinFactsByBarcode?barcode=${encodeURIComponent(b)}&gradingService=${svc}`);
+  const raw = barcode || cert;
+  if (gs === "PCGS" && cert) byCert(cert);
+  if (raw) byBarcode(raw, gs);
+  if (gs === "PCGS") {
+    // Digit runs inside the scanned text that could be the cert number.
+    const runs = (raw.match(/\d{6,}/g) || []).sort((x, y) => y.length - x.length);
+    for (const run of runs) {
+      if (run.length <= 10) byCert(run.replace(/^0+(?=\d{6})/, ""));
+      if (run.length > 8) { byCert(run.slice(-8)); byCert(run.slice(-7)); byCert(run.slice(0, 8)); }
+    }
+  } else if (cert) {
+    byBarcode(cert.replace(/-/g, ""), "NGC");
+  }
+  if (!plan.length) return { ok: false, error: "Nothing to look up." };
+
+  const attempts = [];
+  for (const step of plan.slice(0, 7)) {
+    let r, d = null, text = "";
+    try {
+      r = await fetch(PCGS + step.path, { headers: { Authorization: `bearer ${token}`, Accept: "application/json" } });
+      text = await r.text();
+      try { d = JSON.parse(text); } catch {}
+    } catch (e) {
+      attempts.push({ try: step.label, result: "network error: " + e.message });
+      continue;
+    }
+    const msg = d && (d.ServerMessage || d.Message || d.message) || text.slice(0, 120);
+    attempts.push({ try: step.label, status: r.status, result: msg || "(empty)" });
+    if (r.status === 401 || r.status === 403 || (r.status === 500 && /auth|token|credential/i.test(text))) {
+      return { ok: false, error: "PCGS rejected your API token. Generate a new one at pcgs.com/publicapi and update PCGS_TOKEN in Cloudflare.", attempts };
+    }
+    if (r.ok && d && d.IsValidRequest !== false && (d.Name || d.PCGSNo)) {
+      return { ok: true, source: "PCGS CoinFacts", coin: normalize(d, service), attempts };
+    }
+  }
+  const allTokenErrors = attempts.length && attempts.every(a => a.status === 500);
+  return {
+    ok: false,
+    error: allTokenErrors
+      ? "PCGS returned a server error for every try, which usually means the API token is invalid or expired."
+      : "PCGS didn't recognise this slab. It may be very new, or the code wasn't read fully.",
+    attempts,
+  };
 }
 
 function normalize(d, service) {

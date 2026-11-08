@@ -107,3 +107,8 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translate(-50%, 40px); opacity: 0; background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-weight: 600; transition: .25s; pointer-events: none; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 @media (max-width: 380px) { .totals { grid-template-columns: repeat(2, 1fr); } }
+.notice.error { border-left: 4px solid var(--danger); }
+.notice details { margin-top: 6px; font-size: 13px; }
+.notice summary { cursor: pointer; color: var(--muted); }
+.notice code { word-break: break-all; font-size: 12px; }
+.notice details p { margin: 4px 0; }
