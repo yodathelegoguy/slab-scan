@@ -112,3 +112,6 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .notice summary { cursor: pointer; color: var(--muted); }
 .notice code { word-break: break-all; font-size: 12px; }
 .notice details p { margin: 4px 0; }
+.small { font-size: 13px; }
+label.check { display: flex; gap: 10px; align-items: center; color: var(--text); font-size: 15px; }
+label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(--gold); }

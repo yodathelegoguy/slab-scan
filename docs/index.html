@@ -74,6 +74,7 @@
         <button id="export-csv">Export CSV</button>
         <button id="clear-all" class="danger">Clear all</button>
       </div>
+      <button id="fill-missing" class="ghost hidden"></button>
       <ul id="coin-list" class="coin-list"></ul>
       <p id="empty" class="muted">No coins yet. Scan a slab to add one.</p>
     </section>
@@ -93,6 +94,14 @@
         </div>
         <p id="settings-status" class="muted"></p>
       </form>
+      <div class="card">
+        <h2>PCGS lookups</h2>
+        <p id="usage" class="muted"></p>
+        <label class="check"><input type="checkbox" id="auto-lookup"> Look up each coin automatically after scanning</label>
+        <p class="muted small">Turn this off to scan a pile of slabs quickly, then use “Fill in missing details” on the Collection tab when you have lookups to spare. Coins you've looked up before never use another lookup.</p>
+        <label for="daily-limit">Your PCGS daily limit</label>
+        <input id="daily-limit" type="number" inputmode="numeric" min="1" value="100">
+      </div>
       <div class="card">
         <h2>Scanning tips</h2>
         <ul class="muted tips">

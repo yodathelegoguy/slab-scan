@@ -130,31 +130,72 @@
   });
 
   // ---------- lookup ----------
-  async function apiLookup(parsed) {
+  // ---------- PCGS call budget ----------
+  const CACHE_KEY = "slabscan.lookups.v1", USAGE_KEY = "slabscan.usage.v1";
+  let lookupCache = load(CACHE_KEY, {});
+  const today = () => new Date().toLocaleDateString("en-CA");
+  function usedToday() { const u = load(USAGE_KEY, {}); return u.day === today() ? u.calls : 0; }
+  function addUsage(n) {
+    if (!n) return;
+    const u = load(USAGE_KEY, {}); const d = today();
+    save(USAGE_KEY, { day: d, calls: (u.day === d ? u.calls : 0) + n });
+    renderUsage();
+  }
+  const dailyLimit = () => cfg.dailyLimit || 100;
+  function usageText() { return `PCGS lookups today: ${usedToday()} of ${dailyLimit()}`; }
+  function renderUsage() { const el = $("#usage"); if (el) el.textContent = usageText(); }
+  const cacheKeys = p => [p.cert && `${p.service}:c:${p.cert}`, p.raw && `${p.service}:r:${p.raw}`].filter(Boolean);
+  function fromMemory(p) {
+    // A coin already in the collection, or looked up before, costs nothing.
+    if (p.cert) {
+      const c = coins.find(x => x.service === p.service && x.certNo === p.cert && (x.name || x.pcgsNo));
+      if (c) return { ...c };
+    }
+    for (const k of cacheKeys(p)) if (lookupCache[k]) return { ...lookupCache[k] };
+    return null;
+  }
+  function remember(p, coin) {
+    for (const k of cacheKeys(p)) lookupCache[k] = coin;
+    if (coin.certNo) lookupCache[`${p.service}:c:${coin.certNo}`] = coin;
+    const keys = Object.keys(lookupCache);
+    if (keys.length > 2000) keys.slice(0, keys.length - 2000).forEach(k => delete lookupCache[k]);
+    save(CACHE_KEY, lookupCache);
+  }
+
+  async function apiLookup(parsed, mode) {
     if (!cfg.proxy) return { ok: false, error: "No lookup server set. Add one in Settings to pull coin details automatically.", offline: true };
+    if (!mode) {
+      const mem = fromMemory(parsed);
+      if (mem) return { ok: true, coin: mem, cached: true };
+    }
     const q = new URLSearchParams({ service: parsed.service || "PCGS" });
+    if (mode) q.set("mode", mode);
     if (parsed.cert) q.set("cert", parsed.cert);
     if (parsed.raw && parsed.raw !== parsed.cert) q.set("barcode", parsed.raw);
     try {
       const r = await fetch(cfg.proxy + "/lookup?" + q, { headers: { "X-App-Key": cfg.appKey } });
       const d = await r.json().catch(() => ({ ok: false, error: `Server returned HTTP ${r.status}` }));
+      addUsage(d.calls || 0);
+      if (d.ok && d.coin) remember(parsed, d.coin);
       return d;
     } catch (e) {
       return { ok: false, error: "Could not reach the lookup server. Check the URL and your connection." };
     }
   }
 
-  async function handleCode(raw) {
+  async function handleCode(raw, mode) {
     const parsed = parseScan(raw, cfg.service);
     if (!parsed.service && cfg.service === "auto") parsed.service = "PCGS";
     const card = $("#result");
     card.classList.remove("hidden");
-    card.innerHTML = `<p class="muted">Looking up <b>${esc(parsed.cert || parsed.raw)}</b>…</p>`;
-    let res = await apiLookup(parsed);
-    // An unknown long barcode might be NGC: retry once if PCGS found nothing and the user chose Auto.
-    if (!res.ok && !res.offline && parsed.kind === "barcode" && cfg.service === "auto" && parsed.service === "PCGS") {
-      const alt = await apiLookup({ ...parsed, service: "NGC" });
-      if (alt.ok) { res = alt; parsed.service = "NGC"; }
+    let res;
+    const mem = mode ? null : fromMemory(parsed);
+    if (mem) res = { ok: true, coin: mem, cached: true };
+    else if (!mode && cfg.autoLookup === false) res = { ok: false, deferred: true, error: "Automatic lookups are off, so no PCGS lookup was used." };
+    else if (!cfg.proxy) res = await apiLookup(parsed);
+    else {
+      card.innerHTML = `<p class="muted">Looking up <b>${esc(parsed.cert || parsed.raw)}</b>…</p>`;
+      res = await apiLookup(parsed, mode === "single" ? undefined : mode);
     }
     const coin = res.ok ? res.coin : {
       service: parsed.service, certNo: parsed.cert || "", name: "", grade: "",
@@ -162,10 +203,10 @@
     coin.service = coin.service || parsed.service;
     coin.certNo = coin.certNo || parsed.cert || "";
     coin.rawCode = parsed.raw;
-    renderResult(coin, res);
+    renderResult(coin, res, raw);
   }
 
-  function renderResult(coin, res) {
+  function renderResult(coin, res, raw) {
     const card = $("#result");
     const vurl = verifyUrl(coin.service, coin.certNo);
     const dup = coins.find(c => c.service === coin.service && c.certNo && c.certNo === coin.certNo);
@@ -180,13 +221,17 @@
     ].filter(([, v]) => v !== "" && v != null);
 
     card.innerHTML = `
-      ${res.ok ? "" : `<div class="notice error"><b>No coin details found.</b> ${esc(res.error || "Lookup failed.")}
+      ${res.deferred ? `<div class="notice"><b>Not looked up yet.</b> ${esc(res.error)}
+        <div class="row"><button type="button" class="primary" id="lookup-now">Look up now (1 PCGS lookup)</button></div></div>` : ""}
+      ${res.ok || res.deferred ? "" : `<div class="notice error"><b>No coin details found.</b> ${esc(res.error || "Lookup failed.")}
+        ${res.canTryHarder ? `<div class="row"><button type="button" id="try-harder">Try other ways (up to 3 lookups)</button></div>` : ""}
         <details><summary>What was scanned</summary>
           <p>Scanned text: <code>${esc(coin.rawCode || "")}</code></p>
           ${(res.attempts || []).map(a => `<p><code>${esc(a.try)}</code> → ${esc(a.status != null ? "HTTP " + a.status + ": " : "")}${esc(a.result)}</p>`).join("")}
         </details></div>`}
       ${coin.image ? `<img class="coin-img" src="${esc(coin.image)}" alt="Coin photo" referrerpolicy="no-referrer">` : ""}
       <h2 class="coin-name">${esc(coin.name || "Unknown coin")}</h2>
+      <p class="muted small">${res.cached ? "Already looked up before, so no PCGS lookup was used. " : ""}${cfg.proxy ? esc(usageText()) : ""}</p>
       <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${k === "Last auction" ? v : esc(v)}</dd>`).join("")}</dl>
       <div class="links">
         ${vurl ? `<a href="${vurl}" target="_blank" rel="noopener">Verify on ${esc(coin.service)}</a>` : ""}
@@ -230,13 +275,15 @@
       startScan();
     });
     $("#scan-next").addEventListener("click", () => { card.classList.add("hidden"); startScan(); });
+    const th = $("#try-harder"); if (th) th.addEventListener("click", () => handleCode(raw || coin.rawCode, "deep"));
+    const ln = $("#lookup-now"); if (ln) ln.addEventListener("click", () => handleCode(raw || coin.rawCode, "single"));
     card.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // ---------- collection ----------
   function updateCount() { $("#count").textContent = coins.length; }
   function renderList() {
-    updateCount();
+    updateCount(); renderFill();
     $("#empty").classList.toggle("hidden", coins.length > 0);
     const sum = k => coins.reduce((a, c) => a + (num(c[k]) || 0), 0);
     $("#totals").innerHTML = coins.length ? `
@@ -361,6 +408,41 @@
     st.textContent = d.ok
       ? `Connected and saved. PCGS key: ${d.pcgs ? "set" : "MISSING"}. Greysheet key: ${d.greysheet ? "set" : "not set"}.`
       : (d.error || `HTTP ${r.status}`) + " (saved)";
+  });
+
+  // ---------- lookup settings ----------
+  $("#auto-lookup").checked = cfg.autoLookup !== false;
+  $("#auto-lookup").addEventListener("change", e => { cfg.autoLookup = e.target.checked; save(CFG, cfg); });
+  $("#daily-limit").value = dailyLimit();
+  $("#daily-limit").addEventListener("change", e => { cfg.dailyLimit = Math.max(1, parseInt(e.target.value) || 100); save(CFG, cfg); renderUsage(); });
+  renderUsage();
+
+  // ---------- fill in coins saved without details ----------
+  // NGC certs typed by hand can't be looked up (no NGC API); scanned NGC barcodes can.
+  const missing = () => coins.filter(c => !c.name && !c.pcgsNo &&
+    (c.service === "NGC" ? (c.rawCode && c.rawCode !== c.certNo) : (c.certNo || c.rawCode)));
+  function renderFill() {
+    const n = missing().length, b = $("#fill-missing");
+    b.classList.toggle("hidden", !n || !cfg.proxy);
+    b.textContent = `Fill in missing details for ${n} coin${n === 1 ? "" : "s"} (up to ${n} PCGS lookup${n === 1 ? "" : "s"})`;
+  }
+  $("#fill-missing").addEventListener("click", async () => {
+    const list = missing(); const left = dailyLimit() - usedToday();
+    if (list.length > left && !confirm(`That could use ${list.length} lookups and you have about ${left} left today. Continue?`)) return;
+    let filled = 0;
+    for (const c of list) {
+      $("#fill-missing").textContent = `Looking up ${filled + 1} of ${list.length}…`;
+      const p = parseScan(c.rawCode || c.certNo, c.service);
+      p.service = c.service || p.service;
+      const res = await apiLookup(p);
+      if (res.limited) { toast("PCGS limit reached. Try the rest tomorrow."); break; }
+      if (res.ok && res.coin) {
+        const keep = { id: c.id, addedAt: c.addedAt, greysheet: c.greysheet, paid: c.paid, cac: c.cac, notes: c.notes, rawCode: c.rawCode };
+        Object.assign(c, res.coin, keep); filled++;
+      }
+    }
+    save(STORE, coins); renderList();
+    toast(`Filled in ${filled} of ${list.length}.`);
   });
 
   updateCount();

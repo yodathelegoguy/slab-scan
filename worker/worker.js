@@ -94,10 +94,31 @@ async function lookup(params, env) {
   }
   if (!plan.length) return { ok: false, error: "Nothing to look up." };
 
+  // PCGS limits calls, so a normal lookup makes exactly one: the first (most likely) route.
+  // "deep" mode tries up to 3 of the remaining routes, only when the user asks.
+  const deep = params.get("mode") === "deep";
+  if (gs === "NGC" && !barcode && !deep) {
+    return { ok: false, error: "NGC has no public lookup API, so a typed NGC cert can't be looked up. Scan the NGC barcode instead, or use the NGC verification link.", attempts: [], calls: 0, canTryHarder: true };
+  }
+  const steps = deep ? plan.slice(1, 4) : plan.slice(0, 1);
+  if (!steps.length) return { ok: false, error: "No other ways left to try for this code.", attempts: [], calls: 0, canTryHarder: false };
+
+  const cache = typeof caches !== "undefined" ? caches.default : null;
   const attempts = [];
-  for (const step of plan.slice(0, 7)) {
+  let calls = 0;
+  for (const step of steps) {
     let r, d = null, text = "";
+    const cacheKey = new Request("https://slab-scan-cache.internal" + step.path);
+    if (cache) {
+      const hit = await cache.match(cacheKey);
+      if (hit) {
+        const cd = await hit.json();
+        attempts.push({ try: step.label, result: "from cache (no PCGS call)" });
+        return { ok: true, source: "PCGS CoinFacts (cached)", coin: normalize(cd, service), attempts, calls };
+      }
+    }
     try {
+      calls++;
       r = await fetch(PCGS + step.path, { headers: { Authorization: `bearer ${token}`, Accept: "application/json" } });
       text = await r.text();
       try { d = JSON.parse(text); } catch {}
@@ -108,10 +129,18 @@ async function lookup(params, env) {
     const msg = d && (d.ServerMessage || d.Message || d.message) || text.slice(0, 120);
     attempts.push({ try: step.label, status: r.status, result: msg || "(empty)" });
     if (r.status === 401 || r.status === 403 || (r.status === 500 && /auth|token|credential/i.test(text))) {
-      return { ok: false, error: "PCGS rejected your API token. Generate a new one at pcgs.com/publicapi and update PCGS_TOKEN in Cloudflare.", attempts };
+      return { ok: false, error: "PCGS rejected your API token. Generate a new one at pcgs.com/publicapi and update PCGS_TOKEN in Cloudflare.", attempts, calls, canTryHarder: false };
+    }
+    if (r.status === 429 || /limit|quota|exceed/i.test(msg)) {
+      return { ok: false, error: "You've hit your PCGS lookup limit. Scans still save; look them up after the limit resets.", attempts, calls, canTryHarder: false, limited: true };
     }
     if (r.ok && d && d.IsValidRequest !== false && (d.Name || d.PCGSNo)) {
-      return { ok: true, source: "PCGS CoinFacts", coin: normalize(d, service), attempts };
+      if (cache) {
+        await cache.put(cacheKey, new Response(JSON.stringify(d), {
+          headers: { "Content-Type": "application/json", "Cache-Control": "max-age=2592000" },
+        })).catch(() => {});
+      }
+      return { ok: true, source: "PCGS CoinFacts", coin: normalize(d, service), attempts, calls };
     }
   }
   const allTokenErrors = attempts.length && attempts.every(a => a.status === 500);
@@ -119,8 +148,9 @@ async function lookup(params, env) {
     ok: false,
     error: allTokenErrors
       ? "PCGS returned a server error for every try, which usually means the API token is invalid or expired."
-      : "PCGS didn't recognise this slab. It may be very new, or the code wasn't read fully.",
-    attempts,
+      : "PCGS didn't recognise this slab using the scanned code.",
+    attempts, calls,
+    canTryHarder: !deep && plan.length > 1,
   };
 }
 
