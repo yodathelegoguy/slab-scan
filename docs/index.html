@@ -19,13 +19,15 @@
     <nav class="tabs" role="tablist">
       <button class="tab active" data-view="scan" role="tab">Scan</button>
       <button class="tab" data-view="list" role="tab">Collection <span id="count" class="badge">0</span></button>
-      <button class="tab" data-view="settings" role="tab">Settings</button>
+      <button class="tab" data-view="deals" role="tab">Deals</button>
+      <button class="tab" data-view="settings" role="tab">Settings <span id="sync-dot" class="sync-dot hidden" aria-hidden="true"></span></button>
     </nav>
   </header>
 
   <main>
     <!-- SCAN -->
     <section id="view-scan" class="view active">
+      <div id="deal-bar" class="deal-bar"></div>
       <div class="service-pick" role="radiogroup" aria-label="Grading service">
         <button class="seg active" data-service="auto">Auto</button>
         <button class="seg" data-service="PCGS">PCGS</button>
@@ -38,11 +40,13 @@
         <div id="reader-idle">
           <p>Scan the barcode or QR code on the slab label.</p>
           <button id="start-scan" class="primary big">Start camera</button>
+          <button id="start-batch" class="batch-btn">Batch scan a box</button>
           <label class="photo-btn">Take a photo instead
             <input id="photo-input" type="file" accept="image/*" capture="environment">
           </label>
         </div>
         <p id="scan-status" class="scan-status hidden"></p>
+        <div id="batch-count" class="batch-count hidden" aria-live="polite">0</div>
       </div>
       <div id="cam-controls" class="cam-controls hidden">
         <div id="zoom-wrap" class="zoom hidden">
@@ -63,20 +67,41 @@
         </div>
       </form>
 
+      <div id="batch-panel" class="card batch hidden">
+        <div class="batch-head">
+          <div><h2 id="batch-title">Batch scanning</h2><p class="muted small"><b id="batch-n">0</b> added<span id="batch-dups"></span></p></div>
+          <button type="button" id="batch-close" class="link-btn" aria-label="Close batch">✕</button>
+        </div>
+        <p id="batch-hint" class="muted small"></p>
+        <div class="row">
+          <button type="button" id="batch-finish" class="primary">Finish batch</button>
+          <button type="button" id="batch-more" class="hidden">Scan more</button>
+          <button type="button" id="batch-view" class="primary hidden">View collection</button>
+        </div>
+        <ul id="batch-list" class="batch-list"></ul>
+      </div>
+
       <div id="result" class="card hidden"></div>
     </section>
 
     <!-- COLLECTION -->
     <section id="view-list" class="view">
+      <div class="spot" id="spot"></div>
       <div class="totals" id="totals"></div>
       <div class="row wrap">
         <button id="export-xlsx" class="primary">Export Excel</button>
         <button id="export-csv">Export CSV</button>
         <button id="clear-all" class="danger">Clear all</button>
       </div>
+      <div id="status-filter" class="chips" role="group" aria-label="Filter by status"></div>
       <button id="fill-missing" class="ghost hidden"></button>
       <ul id="coin-list" class="coin-list"></ul>
       <p id="empty" class="muted">No coins yet. Scan a slab to add one.</p>
+    </section>
+
+    <!-- DEALS -->
+    <section id="view-deals" class="view">
+      <div id="deals-root"></div>
     </section>
 
     <!-- SETTINGS -->
@@ -94,6 +119,17 @@
         </div>
         <p id="settings-status" class="muted"></p>
       </form>
+      <div id="offer-settings" class="card"></div>
+      <div class="card">
+        <h2>Shared collection</h2>
+        <p class="muted">Every phone signed in to the same lookup server and passcode shares one collection. Coins you add, edit or delete show up on the others within about 30 seconds, and anything scanned offline goes up when you're back online.</p>
+        <label for="sync-name">Your name</label>
+        <input id="sync-name" type="text" autocomplete="name" placeholder="e.g. Carson" maxlength="40">
+        <p class="muted small">Shown next to the coins you add, and in the export's “Added By” column.</p>
+        <label class="check"><input type="checkbox" id="sync-on"> Share this phone's collection</label>
+        <div class="row"><button type="button" id="sync-now">Sync now</button></div>
+        <p id="sync-status" class="muted"></p>
+      </div>
       <div class="card">
         <h2>PCGS lookups</h2>
         <p id="usage" class="muted"></p>
@@ -109,11 +145,48 @@
           <li>Tilt the slab slightly so the plastic doesn't reflect light straight back at the camera.</li>
           <li>Still stuck? Tap <b>Photo</b>: the iPhone camera focuses better, and the app reads the barcode from the picture.</li>
           <li>PCGS: barcode or QR on the front label. NGC: barcode on the back of the label, or the QR code.</li>
+          <li>Batch scan a box: tap <b>Batch scan a box</b> and hold each slab up until it beeps. Nothing is looked up, so it doesn't use your PCGS limit. Turn off silent mode to hear the beeps.</li>
           <li>No signal? Type the cert number instead and the coin is still saved.</li>
         </ul>
       </div>
     </section>
   </main>
+
+  <dialog id="editor" class="editor">
+    <form id="editor-form" autocomplete="off">
+      <h2 id="editor-title" class="coin-name"></h2>
+      <p id="editor-sub" class="muted small"></p>
+      <div class="grid2">
+        <label>Grade<input name="grade" placeholder="e.g. MS65"></label>
+        <label>CAC sticker<select name="cac"><option value="">None</option><option>Green</option><option>Gold</option></select></label>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="plus"> Plus (+) grade</label>
+        <label class="check"><input type="checkbox" name="star"> Star (★)</label>
+      </div>
+      <label>Status<select name="status">
+        <option value="">Scanned (not bought)</option><option value="bought">In stock</option>
+        <option value="listed">Listed for sale</option><option value="sold">Sold</option>
+      </select></label>
+      <div class="grid2">
+        <label>Cost (price paid)<input name="paid" inputmode="decimal" placeholder="$"></label>
+        <label>Greysheet bid<input name="greysheet" inputmode="decimal" placeholder="$"></label>
+        <label data-show="bought listed sold">Date bought<input name="boughtAt" type="date"></label>
+        <label data-show="listed sold">List price<input name="listPrice" inputmode="decimal" placeholder="$"></label>
+        <label data-show="listed sold">Date listed<input name="listedAt" type="date"></label>
+        <label data-show="sold">Sale price<input name="salePrice" inputmode="decimal" placeholder="$"></label>
+        <label data-show="sold">Fees<input name="fees" inputmode="decimal" placeholder="$ (eBay, shipping…)"></label>
+        <label data-show="sold">Date sold<input name="soldAt" type="date"></label>
+      </div>
+      <label data-show="sold">Sold to<input name="soldTo" placeholder="Customer, show, eBay…"></label>
+      <p id="editor-profit" class="profit"></p>
+      <label>Notes<input name="notes"></label>
+      <div class="row">
+        <button type="button" id="editor-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -121,6 +194,11 @@
   <script src="scanner.js"></script>
   <script src="vendor/xlsx.mini.min.js"></script>
   <script src="parse.js"></script>
+  <script src="melt.js"></script>
+  <script src="inventory.js"></script>
+  <script src="sync.js"></script>
+  <script src="deals.js"></script>
   <script src="app.js"></script>
+  <script src="batch.js"></script>
 </body>
 </html>

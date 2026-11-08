@@ -42,8 +42,12 @@
 
   // ---------- live camera ----------
   class LiveScanner {
-    constructor({ video, onResult, onStatus }) {
+    // continuous: keep scanning after a hit (batch mode). The same code is reported
+    // once and ignored until it has been out of view for HOLD_MS, so a slab held
+    // in front of the camera only counts once.
+    constructor({ video, onResult, onStatus, continuous }) {
       this.video = video; this.onResult = onResult; this.onStatus = onStatus || (() => {});
+      this.continuous = !!continuous; this.lastText = null; this.lastSeen = 0; this.pauseUntil = 0;
       this.canvas = document.createElement("canvas");
       this.ctx = this.canvas.getContext("2d", { willReadFrequently: true });
       this.stream = null; this.track = null; this.running = false; this.frame = 0;
@@ -89,6 +93,14 @@
       return caps;
     }
 
+    report(text) {
+      const now = performance.now();
+      if (text === this.lastText && now - this.lastSeen < LiveScanner.HOLD_MS) { this.lastSeen = now; return; }
+      if (now < this.pauseUntil) return; // brief gap between different slabs
+      this.lastText = text; this.lastSeen = now; this.pauseUntil = now + LiveScanner.GAP_MS;
+      try { this.onResult(text); } catch (e) { console.error(e); }
+    }
+
     async setZoom(z) { try { await this.track.applyConstraints({ advanced: [{ zoom: z }] }); } catch {} }
     async setTorch(on) { try { await this.track.applyConstraints({ advanced: [{ torch: on }] }); return true; } catch { return false; } }
 
@@ -112,7 +124,10 @@
           drawRotated(this.ctx, v, sx, sy, sw, sh, cw, ch, step.angle || 0);
           try {
             const text = await decode(this.ctx.getImageData(0, 0, cw, ch), step.opts);
-            if (text && this.running) { this.stop(); this.onResult(text); return; }
+            if (text && this.running) {
+              if (!this.continuous) { this.stop(); this.onResult(text); return; }
+              this.report(text);
+            }
           } catch (e) { this.onStatus("Decoder error: " + e.message); }
         }
         const wait = Math.max(0, 90 - (performance.now() - t0));
@@ -127,6 +142,8 @@
       this.video.srcObject = null;
     }
   }
+
+  LiveScanner.HOLD_MS = 2500; LiveScanner.GAP_MS = 700;
 
   // ---------- still photo ----------
   async function decodeFile(file) {

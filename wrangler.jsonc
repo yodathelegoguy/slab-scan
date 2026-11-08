@@ -1,6 +1,7 @@
 // One Cloudflare Worker serves both the phone app (docs/) and the lookup API.
 // Secrets (set in the Cloudflare dashboard, kept across deploys): APP_KEY, PCGS_TOKEN,
-// optional GREYSHEET_TOKEN and GREYSHEET_KEY.
+// optional GREYSHEET_TOKEN and GREYSHEET_KEY. Optional variables ACCESS_TEAM_DOMAIN and
+// ACCESS_AUD turn on Cloudflare Access login checks (see SECURITY.md).
 {
   "name": "slab-scan",
   "main": "worker/worker.js",
@@ -8,9 +9,18 @@
   "assets": {
     "directory": "./docs",
     "binding": "ASSETS",
-    "run_worker_first": ["/health", "/lookup", "/status", "/greysheet/*"]
+    "run_worker_first": ["/health", "/lookup", "/status", "/spot", "/sync", "/greysheet/*"]
   },
   "keep_vars": true,
+  // Per-IP limits, enforced by Cloudflare (free, nothing to set up).
+  // API_LIMIT: all API calls. AUTH_FAIL_LIMIT: wrong passcodes, used when no database is bound.
+  "ratelimits": [
+    { "name": "API_LIMIT", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "AUTH_FAIL_LIMIT", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } }
+  ],
+  // Shared database (lockouts, PCGS cache, sync). No database_id on purpose: wrangler
+  // connects to the database named slab-scan-db on deploy, or creates it.
+  "d1_databases": [{ "binding": "DB", "database_name": "slab-scan-db" }],
   // Lets Cloudflare build preview links for pull requests (`wrangler preview`).
   "previews": {}
 }
