@@ -17,9 +17,6 @@
       // Newest first, the same order the app adds coins in.
       sort: (a, b) => String(b.addedAt || "").localeCompare(String(a.addedAt || "")) },
     { kind: "gslink", key: "slabscan.greysheet.v1", type: "map" },
-    // Deals (deals.js) and the shared offer settings: default %, category rules, sheet text.
-    { kind: "deal", key: "slabscan.deallist.v1", type: "array" },
-    { kind: "offercfg", key: "slabscan.offers.v1", type: "map" },
   ];
   const STATE = "slabscan.sync.v1";      // settings + cursor
   const SHADOW = "slabscan.syncshadow.v1"; // what each record looked like at the last sync

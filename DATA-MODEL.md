@@ -14,12 +14,12 @@ use them instead of re-implementing the rules.
 | `slabscan.lookups.v1` | Cache of PCGS lookups (coin details only, no user fields). Safe to drop. |
 | `slabscan.usage.v1` | PCGS calls used today: `{ day, calls }`. Per device. |
 | `slabscan.listfilter.v1` | Last status filter on the Collection tab. Per device. |
-| `slabscan.deallist.v1` | Array of deals (seller, date, status, lot offer, notes). Synced. Older versions kept these in `slabscan.deals.v1`, which `deals.js` migrates on load. |
+| `slabscan.deals.v1` | Array of deals (seller, date, status, lot offer, notes). Synced. Early builds stored `{ deals, activeId }` here; `deals.js` converts that on load. |
 | `slabscan.dealactive.v1` | Id of the deal this phone is scanning into. Per device. |
 | `slabscan.offers.v1` | Offer settings: default % of Greysheet, category rules, rounding, offer-sheet text. Synced, so every phone offers the same way. |
 | `slabscan.sync.v1`, `slabscan.syncshadow.v1` | Sync settings (your name, on/off, cursor) and what each record looked like at the last sync. Per device. |
 
-Synced keys are listed in `COLLECTIONS` in [`docs/sync.js`](docs/sync.js): coins, Greysheet links, deals, offer settings.
+Synced keys: coins and Greysheet links (`COLLECTIONS` in [`docs/sync.js`](docs/sync.js)), plus deals and offer settings, which `deals.js` registers with `SlabSync.collection()`.
 
 ## Coin record
 
@@ -49,7 +49,7 @@ Two kinds of fields: **coin details** come from the PCGS lookup and can be refre
 | `notes` | string | Free text. |
 | `rawCode` | string | Exactly what was scanned or typed. |
 | `meltMetal`, `meltOz` | string, number \| null | Metal content typed by the user for melt value (`meltMetal: "none"` turns melt off for the coin). Empty means use PCGS data or the built-in table in `melt.js`. |
-| `dealId` | string | The deal (`slabscan.deallist.v1`) this coin was bought or offered in. |
+| `dealId` | string | The deal (`slabscan.deals.v1`) this coin was bought or offered in. |
 | `offerPct`, `offerFixed` | number \| null | Per-coin offer override: a % of Greysheet, or a fixed price. |
 | `addedBy` | string | Name of the phone's user (Settings → Your name) who added the coin. |
 

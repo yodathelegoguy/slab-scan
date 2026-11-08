@@ -11,9 +11,20 @@
  */
 (() => {
   const OFFERS = "slabscan.offers.v1";
-  const DEALS = "slabscan.deals.v1";
+  const DEALS = "slabscan.deals.v1";       // array of deals, shared by cloud sync
+  const ACTIVE = "slabscan.dealactive.v1"; // the deal this phone is scanning into (not synced)
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
-  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  const save = (k, v) => {
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch { return; }
+    if (k !== ACTIVE && window.SlabSync && SlabSync.changed) SlabSync.changed(); // cloud sync (sync.js), when present
+  };
+  // Lets cloud sync (sync.js) share deals and offer settings between phones.
+  function registerSync() {
+    if (!window.SlabSync || !SlabSync.collection) return;
+    SlabSync.collection({ kind: "deal", key: DEALS, type: "array" });
+    SlabSync.collection({ kind: "offercfg", key: OFFERS, type: "map" });
+  }
+  registerSync();
   const num = v => { if (v === null || v === undefined || v === "") return null; const n = parseFloat(String(v).replace(/[$,%\s]/g, "")); return isNaN(n) ? null : n; };
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = n => (n === null || n === undefined || n === "" || isNaN(n)) ? "" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -27,28 +38,21 @@
 
   const DEFAULT_TERMS = "This offer is good for today only and is based on the coins listed above. " +
     "By signing, the seller confirms they own these coins and have the right to sell them.";
-  // Deals are kept as a plain array under DEAL_LIST so sync.js can share them between
-  // phones; the deal this phone is scanning into (activeId) stays on this phone only.
-  const DEAL_LIST = "slabscan.deallist.v1", DEAL_ACTIVE = "slabscan.dealactive.v1";
-  const loadOc = () => Object.assign({ pct: 85, rules: [], guidePct: null, round: 1, business: "", businessLine: "", terms: DEFAULT_TERMS, showBid: false }, load(OFFERS, {}));
-  function loadStore() {
-    const old = load(DEALS, null); // before sync: { deals, activeId } in one key
-    if (old && localStorage.getItem(DEAL_LIST) === null) {
-      save(DEAL_LIST, Array.isArray(old.deals) ? old.deals : []); save(DEAL_ACTIVE, old.activeId || "");
+  const OC_DEFAULTS = { pct: 85, rules: [], guidePct: null, round: 1, business: "", businessLine: "", terms: DEFAULT_TERMS, showBid: false };
+  let oc, store;
+  function loadAll() {
+    oc = Object.assign({}, OC_DEFAULTS, load(OFFERS, {}));
+    let deals = load(DEALS, []);
+    // Older builds saved { deals, activeId } in one key: split it into the two keys.
+    if (deals && !Array.isArray(deals) && Array.isArray(deals.deals)) {
+      if (deals.activeId && localStorage.getItem(ACTIVE) === null) save(ACTIVE, deals.activeId);
+      deals = deals.deals; save(DEALS, deals);
     }
-    const deals = load(DEAL_LIST, []);
-    return { deals: Array.isArray(deals) ? deals : [], activeId: load(DEAL_ACTIVE, "") || "" };
+    store = { deals: Array.isArray(deals) ? deals : [], activeId: load(ACTIVE, "") || "" };
   }
-  let oc = loadOc();
-  let store = loadStore();
-  const synced = () => { window.SlabSync && SlabSync.changed(); };
-  const saveOc = () => { save(OFFERS, oc); synced(); };
-  const saveDeals = () => { save(DEAL_LIST, store.deals); save(DEAL_ACTIVE, store.activeId); synced(); };
-  // Another phone changed deals or offer settings.
-  window.addEventListener("slabsync:changed", () => {
-    oc = loadOc(); store = loadStore();
-    if (api) { renderBar(); if (document.getElementById("view-deals")?.classList.contains("active")) render(); }
-  });
+  loadAll();
+  const saveOc = () => save(OFFERS, oc);
+  const saveDeals = () => { save(DEALS, store.deals); save(ACTIVE, store.activeId); };
 
   // ---------- offer math ----------
   const haystack = c => [c.name, c.series, c.denomination, c.metal].filter(Boolean).join(" ").toLowerCase();
@@ -458,8 +462,18 @@
     if (e.detail === "settings") renderSettings();
   });
 
+  // Another phone changed shared data: reload it, unless someone is typing in our settings.
+  window.addEventListener("slabsync:changed", () => {
+    loadAll();
+    renderBar();
+    if (document.getElementById("view-deals")?.classList.contains("active") && view.mode !== "new" &&
+      !document.getElementById("deals-root").contains(document.activeElement)) render();
+    const st = document.getElementById("offer-settings");
+    if (st && !st.contains(document.activeElement)) renderSettings();
+  });
+
   window.SlabDeals = {
-    init(a) { api = a; renderBar(); renderSettings(); },
+    init(a) { api = a; registerSync(); renderBar(); renderSettings(); },
     offerFor, offerAmount, describe, offerLine, totals,
     activeId: () => (active() ? store.activeId : ""),
     dealOf: c => (c && c.dealId ? dealById(c.dealId) : null),
