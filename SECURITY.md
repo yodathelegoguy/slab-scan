@@ -10,7 +10,9 @@ clicking in Cloudflare.
 Once this code is deployed, the Worker:
 
 - **Locks out guessers.** 5 wrong passcodes from one internet address within 15 minutes locks
-  that address out for an hour, even if it then sends the right passcode.
+  that address out for an hour, even if it then sends the right passcode. Sending the same
+  wrong passcode again (like a phone still holding an old one) only counts once, and the app
+  stops syncing after a wrong passcode, so changing `APP_KEY` won't lock your own phones out.
 - **Rate limits everyone.** Each address gets at most 60 API calls a minute.
 - **Checks the passcode in constant time**, so response timing gives away nothing about it.
 - **Caches PCGS answers in the database for 30 days**, shared by every phone. (The old cache

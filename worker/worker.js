@@ -362,7 +362,7 @@ async function requireAuth(req, env) {
   if (!env.APP_KEY) return deny(401, "APP_KEY is not set on the server. Add it under Settings > Variables and Secrets.");
   const sent = (req.headers.get("X-App-Key") || "").trim();
   if (!(await safeEqual(sent, String(env.APP_KEY).trim()))) {
-    const lockedNow = await recordFailure(env, ip);
+    const lockedNow = await recordFailure(env, ip, await sha256Hex(sent));
     if (lockedNow) return deny(429, "Too many wrong passcodes. This device is locked out for an hour.", { locked: true }, { "Retry-After": String(LOCK_FOR) });
     return deny(401, "Wrong or missing app passcode.");
   }
@@ -370,6 +370,11 @@ async function requireAuth(req, env) {
 }
 
 const now = () => Math.floor(Date.now() / 1000);
+
+async function sha256Hex(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
 
 // Hashing first makes both sides the same length, so the compare leaks nothing about the passcode.
 async function safeEqual(a, b) {
@@ -392,7 +397,11 @@ function schema(env) {
     ...SCHEMA.map(q => env.DB.prepare(q)),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS sec_auth_fail (ip TEXT PRIMARY KEY, fails INTEGER NOT NULL, window_start INTEGER NOT NULL, locked_until INTEGER NOT NULL DEFAULT 0)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS pcgs_cache (path TEXT PRIMARY KEY, body TEXT NOT NULL, saved_at INTEGER NOT NULL)"),
-  ]).then(() => true).catch(e => { schemaReady = null; throw e; });
+  ])
+    // Added later: a hash of the last wrong passcode, so resending the same one isn't a new guess.
+    // Fails harmlessly once the column exists.
+    .then(() => env.DB.prepare("ALTER TABLE sec_auth_fail ADD COLUMN last_bad TEXT").run().catch(() => {}))
+    .then(() => true).catch(e => { schemaReady = null; throw e; });
   return schemaReady;
 }
 
@@ -406,18 +415,22 @@ async function lockedUntil(env, ip) {
 }
 
 // Returns true when this failure tipped the IP into a lockout.
-async function recordFailure(env, ip) {
+// Only a *different* wrong passcode counts as a new guess. A phone that keeps sending the
+// same old passcode (say, after APP_KEY was changed and its background sync kept running)
+// counts once, so it can't lock its owner out. Someone guessing sends different ones.
+async function recordFailure(env, ip, badHash) {
   if (env.DB) {
     try {
       await schema(env);
       const t = now();
       const row = await env.DB.prepare(`
-        INSERT INTO sec_auth_fail (ip, fails, window_start, locked_until) VALUES (?1, 1, ?2, 0)
+        INSERT INTO sec_auth_fail (ip, fails, window_start, locked_until, last_bad) VALUES (?1, 1, ?2, 0, ?6)
         ON CONFLICT(ip) DO UPDATE SET
-          fails = CASE WHEN ?2 - window_start > ?3 THEN 1 ELSE fails + 1 END,
+          fails = CASE WHEN ?2 - window_start > ?3 THEN 1 WHEN last_bad IS ?6 THEN fails ELSE fails + 1 END,
           window_start = CASE WHEN ?2 - window_start > ?3 THEN ?2 ELSE window_start END,
-          locked_until = CASE WHEN (CASE WHEN ?2 - window_start > ?3 THEN 1 ELSE fails + 1 END) >= ?4 THEN ?2 + ?5 ELSE locked_until END
-        RETURNING locked_until`).bind(ip, t, FAIL_WINDOW, FAIL_MAX, LOCK_FOR).first();
+          locked_until = CASE WHEN ?2 - window_start <= ?3 AND last_bad IS NOT ?6 AND fails + 1 >= ?4 THEN ?2 + ?5 ELSE locked_until END,
+          last_bad = ?6
+        RETURNING locked_until`).bind(ip, t, FAIL_WINDOW, FAIL_MAX, LOCK_FOR, badHash).first();
       return Boolean(row && row.locked_until > t);
     } catch { /* fall through to the rate limiter */ }
   }
