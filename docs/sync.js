@@ -111,7 +111,7 @@
     return changed;
   }
 
-  let running = null, again = false, timer = null;
+  let running = null, again = false, timer = null, authPaused = null;
   async function syncNow(opts = {}) {
     if (running) { again = true; return running; }
     running = (async () => {
@@ -119,6 +119,9 @@
       if (!state.enabled) return report("off");
       if (!proxy) return report("Add the lookup server in Settings to share the collection.", true);
       if (!navigator.onLine) return report("Offline. Changes will sync when you're back online.", true);
+      // The server turned this passcode down. Don't keep resending it in the background
+      // (that used to lock the phone out); wait until the passcode changes or "Sync now".
+      if (!opts.manual && authPaused === appKey) return;
       let anyRemote = false;
       try {
         let pending = localChanges();
@@ -137,6 +140,10 @@
           if (r.type === "opaqueredirect") return report("Your Cloudflare sign-in expired. Open the lookup server's address in Safari to sign in again.", true);
           const d = await r.json().catch(() => ({ ok: false, error: `Server returned HTTP ${r.status}` }));
           if (!d.ok) {
+            if (r.status === 401 || d.locked) {
+              authPaused = appKey;
+              return report((d.error || "Wrong app passcode.") + " Syncing is paused until you fix the passcode in Settings.", true);
+            }
             if (d.noDatabase) return report("The server isn't set up for sharing yet (see SETUP.md, Part 4).", true, true);
             return report(d.error || `Sync failed (HTTP ${r.status}).`, true);
           }
@@ -146,6 +153,7 @@
             sh[c.id] = c.deleted ? { h: "", u: c.updatedAt, d: 1 } : { h: c.h, u: c.updatedAt };
           }
           if (d.reset) { state.cursor = 0; }
+          authPaused = null;
           if (applyRemote(d.changes || [])) anyRemote = true;
           state.cursor = d.cursor;
           store(SHADOW, shadow); saveState();
@@ -203,7 +211,7 @@
       on.checked = state.enabled;
       on.addEventListener("change", () => { state.enabled = on.checked; saveState(); render(); if (state.enabled) syncNow(); });
     }
-    if (now) now.addEventListener("click", () => { state.enabled = true; if (on) on.checked = true; saveState(); syncNow(); });
+    if (now) now.addEventListener("click", () => { state.enabled = true; if (on) on.checked = true; saveState(); syncNow({ manual: true }); });
     render();
   }
 

@@ -650,6 +650,8 @@
       st.textContent = `Reached the server, but it isn't running the Slab Scan code yet (HTTP ${r.status}: "${text.slice(0, 60)}"). Paste worker.js into the Worker and Deploy.`;
       return;
     }
+    // A working passcode restarts sharing right away (it pauses after a wrong one).
+    if (d.ok && window.SlabSync) SlabSync.syncNow({ manual: true });
     st.textContent = d.ok
       ? `Connected and saved. PCGS key: ${d.pcgs ? "set" : "MISSING"}. Greysheet key: ${d.greysheet ? "set" : "not set"}.`
       : (d.error || `HTTP ${r.status}`) + " (saved)";
